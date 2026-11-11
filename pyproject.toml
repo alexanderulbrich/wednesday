@@ -1,0 +1,24 @@
+[project]
+name = "wednesday"
+version = "0.1.0"
+description = "Tiny flow-matching model that dreams up 'it is wednesday my dudes' frogs"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "pillow>=10",
+    "numpy",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+data = ["imagehash>=4.3", "gallery-dl>=1.26"]
+clip = ["open_clip_torch>=2.24"]
+app = ["gradio>=4"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["wednesday"]

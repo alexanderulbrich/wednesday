@@ -1,0 +1,24 @@
+# Python / Umgebung
+__pycache__/
+*.egg-info/
+.venv/
+.ipynb_checkpoints/
+
+# Daten (Rohbilder, aufbereitete Bilder, Review-Ordner)
+data/
+*.zip
+
+# Fake-/Testbilder für Smoke-Tests
+fake/
+fake_*/
+
+# Trainingsläufe, Checkpoints, generierte Bilder
+runs/
+outputs/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# macOS
+.DS_Store
