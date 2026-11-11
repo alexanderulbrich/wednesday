@@ -43,7 +43,7 @@ Ohne echte Daten: Fake-Bilder erzeugen (beige Ellipse + 2 schwarze Augen auf zuf
 
 ## Offen / ungetestet
 Verifiziert ist nur die lokale Pipeline mit Fake-Bildern: prepare → Training → Resume → `generate.py --text`. Die Samples konvergieren nach 1200 Schritten zu sauberen Blobs. **Noch nie gelaufen** sind:
-- `notebooks/train_kaggle.ipynb` auf Kaggle/Colab. Der Platzhalter `REPO` muss auf das echte GitHub-Repo gesetzt werden, und die Pfade `/kaggle/input/wednesday-frogs/64` gehen davon aus, dass Kaggle die Zip mit den Ordnern `64/` und `128/` entpackt.
+- `notebooks/train_kaggle.ipynb` auf Kaggle/Colab. Es klont das öffentliche Repo `alexanderulbrich/wednesday` (Kaggle braucht dafür Internet = On). Die Pfade `/kaggle/input/wednesday-frogs/64` gehen davon aus, dass Kaggle die Zip mit den Ordnern `64/` und `128/` entpackt.
 - `scripts/collect.py reddit`/`url` (gallery-dl): Die Subreddit-Namen sind unverifiziert, und die Reddit-Search-URL ist eventuell nicht von gallery-dl unterstützt.
 - `prepare.py --clip-filter` (open_clip ist nicht installiert, die Schwellen 0,6/0,3 sind geraten).
 - `app.py` (gradio ist nicht installiert).

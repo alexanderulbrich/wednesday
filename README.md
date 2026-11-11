@@ -30,8 +30,8 @@ python train.py --data data/processed/64 --res 64 --base 32 --batch 16 --steps 1
 In `runs/overfit/samples/` sollten nach ein paar hundert Schritten Formen zu sehen sein.
 
 ## 4. Richtig trainieren (Kaggle/Colab)
-1. Repo auf GitHub pushen, `data/wednesday-frogs.zip` als Kaggle-Dataset `wednesday-frogs` hochladen (bzw. in Google Drive legen).
-2. `notebooks/train_kaggle.ipynb` öffnen, `REPO` anpassen, GPU an, alle Zellen ausführen.
+1. `data/wednesday-frogs.zip` als Kaggle-Dataset `wednesday-frogs` hochladen (bzw. in Google Drive legen).
+2. `notebooks/train_kaggle.ipynb` öffnen (klont das öffentliche Repo `alexanderulbrich/wednesday`), GPU an, alle Zellen ausführen.
 3. Standard: 64 px, ca. 18M Parameter, 80k Schritte (ein paar Stunden auf einer T4). Wenn das gut aussieht: `RES = 128`.
 4. `frog.pt` herunterladen.
 
