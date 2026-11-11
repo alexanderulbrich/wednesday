@@ -9,24 +9,32 @@ uv pip install -e '.[data]'          # + '.[clip]' für den Frosch-Filter, '.[ap
 ```
 
 ## 1. Daten sammeln
-```bash
-python scripts/collect.py import ~/Downloads/frogs                        # eigene Sammlung / Chat-Export / Browser-Download
-python scripts/collect.py url <imgur-/knowyourmeme-URL>                   # via gallery-dl
-```
-**Reddit** (z.B. r/ItIsWednesday): gallery-dl wird von Reddit geblockt. Stattdessen den Subreddit in Chrome öffnen, lange
-runterscrollen, mit der Erweiterung *Download All Images* alles speichern, die Zip entpacken und den Ordner importieren
-(`collect.py import ~/Downloads/www.reddit.com`). Mit `top/?t=year`, `hot`, `new` wiederholen, um mehr Bilder zu bekommen.
+Zwei Sorten Bilder: **Memes** (`data/raw/`, das eigentliche Ziel) und **allgemeine Froschfotos**
+(`data/pretrain/raw/`, damit das Netz lernt, wie Frösche aussehen). Alle Quellen laufen durch dieselben Filter:
+Website-Grafiken und Bilder unter 200 px raus, Duplikate raus (auch in anderer Größe), mit `--clip` zusätzlich alles
+ohne Frosch (Bildmodell CLIP, landet zum Durchsehen in `data/rejected/`, nichts wird gelöscht).
 
-Der Import sortiert Website-Grafiken (Avatare, Community-Icons, `64x64.png` …) und Bilder unter 200 px automatisch aus
-(`--min-size`, `--keep-all`). Werbebilder rutschen trotzdem durch, die erwischt `prepare.py --clip-filter` oder Handarbeit.
-Ziel sind 300 bis 2000 Bilder. Mehr Bilder bedeuten weniger reines Auswendiglernen.
-Einfach alles reinwerfen: JPG, PNG, WebP, GIF, `.jfif`, `.avif` und iPhone-`.heic` werden gelesen, in jeder Auflösung (ab 96 px)
-und jedem Seitenverhältnis. Videos und andere Dateien werden übersprungen und gemeldet.
+```bash
+uv pip install -e '.[data,clip]'                                  # einmalig (CLIP lädt ~350 MB Modell)
+
+python scripts/collect.py archive --clip            # alle Bild-Posts der Mittwochs-Subreddits (Reddit-Archiv, ohne Login)
+python scripts/collect.py inat --n 3000             # Frosch-/Krötenfotos von iNaturalist
+python scripts/collect.py import ~/Desktop/frog --clip   # eigener Ordner (Chat-Export, Downloads, ...)
+python scripts/collect.py dedupe                    # Duplikate aus data/raw/manual räumen
+```
+- `archive` holt über das öffentliche Reddit-Archiv **Arctic Shift** nur die Post-Bilder (keine Avatare, keine Werbung) aus
+  r/ItIsWednesday, r/wednesdaymydudes, r/WednesdayFrog, r/ItIsWednesdayMyDudes (`--subreddit` ändert die Liste).
+- `inat` lädt bestimmte Beobachtungen erwachsener Frösche und Kröten mit freier Lizenz, ein Drittel davon von
+  rundlichen Gattungen (*Breviceps*, *Ceratophrys*, …). Herkunft und Lizenz stehen in `data/cache/inat_metadata.jsonl`.
+- Erneutes Ausführen lädt nur Neues (`data/cache/*.seen`). Von Hand gelöschte Bilder kommen also nicht zurück.
+- Formate: JPG, PNG, WebP, GIF, `.jfif`, `.avif`, iPhone-`.heic`. Jede Auflösung und jedes Seitenverhältnis.
+- Direkt von reddit.com laden (gallery-dl, Browser-Erweiterung) funktioniert nicht oder liefert viel Müll. Deshalb `archive`.
 
 ## 2. Aufbereiten
 ```bash
-python scripts/prepare.py                 # dedupe, mittiges Quadrat ausschneiden, 64 + 128 px, data/wednesday-frogs.zip
-python scripts/prepare.py --clip-filter   # optional: Nicht-Frösche rauswerfen (Grenzfälle -> data/processed/review/)
+python scripts/prepare.py        # Memes: mittiges Quadrat, 64 + 128 px -> data/wednesday-frogs.zip
+python scripts/prepare.py --raw data/pretrain/raw --out data/pretrain/processed --zip-name frog-photos
+                                 # Froschfotos -> data/pretrain/frog-photos.zip
 ```
 
 ## 3. Smoke-Test lokal (MPS, ~10 min)
@@ -37,10 +45,13 @@ python train.py --data data/processed/64 --res 64 --base 32 --batch 16 --steps 1
 In `runs/overfit/samples/` sollten nach ein paar hundert Schritten Formen zu sehen sein.
 
 ## 4. Richtig trainieren (Kaggle/Colab)
-1. `data/wednesday-frogs.zip` als Kaggle-Dataset `wednesday-frogs` hochladen (bzw. in Google Drive legen).
-2. `notebooks/train_kaggle.ipynb` öffnen (klont das öffentliche Repo `alexanderulbrich/wednesday`), GPU an, alle Zellen ausführen.
-3. Standard: 64 px, ca. 18M Parameter, 80k Schritte (ein paar Stunden auf einer T4). Wenn das gut aussieht: `RES = 128`.
-4. `frog.pt` herunterladen.
+1. Beide Zips als Kaggle-Datasets hochladen: `data/wednesday-frogs.zip` als `wednesday-frogs`, `data/pretrain/frog-photos.zip`
+   als `frog-photos` (bzw. beide in Google Drive legen).
+2. `notebooks/train_kaggle.ipynb` öffnen (klont das öffentliche Repo `alexanderulbrich/wednesday`), GPU und Internet an, alle Zellen ausführen.
+3. Das Notebook trainiert in zwei Stufen, jeweils in 64 px aus den schärferen 128er Bildern:
+   - **Pretrain** auf Froschfotos + Memes (40k Schritte)
+   - **Fine-Tune** nur auf die Memes (`train.py --init …`, 10k Schritte, kleinere Lernrate)
+4. `frog.pt` aus `ft/` herunterladen.
 
 ## 5. Knopf drücken
 ```bash

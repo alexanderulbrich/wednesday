@@ -76,4 +76,4 @@ def is_junk(path: str | Path, min_size: int = DEFAULT_MIN_SIZE) -> str | None:
 def report_junk(junk: Counter) -> None:
     if junk:
         parts = ", ".join(f"{n}× {why}" for why, n in junk.most_common())
-        print(f"aussortiert (kein Meme): {parts}")
+        print(f"aussortiert: {parts}")

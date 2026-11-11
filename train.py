@@ -6,6 +6,10 @@ Local smoke test (Mac):
 Kaggle / Colab:
     python train.py --data /kaggle/input/wednesday-frogs/64 --res 64 --steps 80000 --out /kaggle/working/run64
 Resume after a session timeout: just rerun the same command (picks up <out>/last.pt), or pass --resume path.
+Two stages (pretrain on frog photos, then fine-tune on the memes):
+    python train.py --data frog-photos/128,wednesday-frogs/128 --res 64 --steps 40000 --out runs/pre
+    python train.py --init runs/pre/last.pt --data wednesday-frogs/128 --res 64 --steps 10000 --lr 1e-4 --out runs/ft
+--data accepts several comma separated folders.
 """
 
 from __future__ import annotations
@@ -47,6 +51,7 @@ def parse_args():
     p.add_argument("--save-every", type=int, default=5000)
     p.add_argument("--sample-steps", type=int, default=30)
     p.add_argument("--resume", default=None)
+    p.add_argument("--init", default=None, help="start from these weights (fine-tune): fresh optimizer, schedule, step")
     p.add_argument("--device", default=None)
     p.add_argument("--workers", type=int, default=2)
     p.add_argument("--seed", type=int, default=0)
@@ -72,10 +77,21 @@ def main():
                         num_workers=args.workers, persistent_workers=args.workers > 0,
                         pin_memory=device.type == "cuda")
 
-    model = UNet(res=args.res, base=args.base, mults=tuple(int(m) for m in args.mults.split(",")),
-                 dropout=args.dropout).to(device)
+    init = torch.load(args.init, map_location="cpu", weights_only=False) if args.init else None
+    if init:  # architecture comes from the checkpoint we fine-tune
+        model = UNet(**{**init["model_config"], "dropout": args.dropout}).to(device)
+        print(f"init from {args.init} (step {init.get('step', '?')}), architecture {init['model_config']}")
+    else:
+        model = UNet(res=args.res, base=args.base, mults=tuple(int(m) for m in args.mults.split(",")),
+                     dropout=args.dropout).to(device)
     print(f"params: {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M")
+    if init:
+        model.load_state_dict(init.get("model", init["ema"]))  # frog.pt only has EMA weights
     ema = EMA(model, decay=args.ema)
+    if init:
+        ema.load_state_dict(init["ema"])
+        ema.warmup = 0  # the EMA copy is already good, don't let it jump to the fresh weights
+        del init
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.0)
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda s: min(1.0, (s + 1) / args.warmup) * (0.5 * (1 + math.cos(math.pi * min(s / args.steps, 1.0))) * 0.9 + 0.1)

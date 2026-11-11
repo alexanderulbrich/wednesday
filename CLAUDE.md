@@ -7,15 +7,22 @@ Ein kleines, selbst gebautes Flow-Matching-Modell (Rectified Flow + UNet), das u
 
 ## Umgebung
 - Entwicklung und Inference laufen auf dem Mac (Apple Silicon, PyTorch **MPS**). **Training passiert auf Kaggle/Colab** (T4/P100), lokal nur Smoke-Tests (≈2,5 it/s bei `--base 32 --batch 16`).
-- venv mit uv: `uv venv && uv pip install -e '.[data]'`. Extras: `clip` (open_clip für den Frosch-Filter), `app` (gradio). Python immer über `.venv/bin/python`.
+- venv mit uv: `uv venv && uv pip install -e '.[data,clip]'`. Extras: `clip` (open_clip für den Frosch-Filter), `app` (gradio). Python immer über `.venv/bin/python`.
 - **iCloud-Falle:** Der Projektordner liegt in den per iCloud synchronisierten „Dokumenten“. iCloud setzt das macOS-Flag `hidden` auf die `.pth`-Dateien der venv, und Python 3.12.12 ignoriert diese dann (`python -v` zeigt `Skipping hidden .pth file`). Damit ist der Editable Install weg. Abhilfe: `chflags nohidden .venv/lib/python3.12/site-packages/*.pth`. `scripts/*.py` fügen deshalb den Projekt-Root selbst in `sys.path` ein, die Skripte im Root brauchen das nicht.
 - Es gibt keine Test-Suite und keinen Linter. Der Smoke-Test unten ist der Funktionstest.
 
 ## Befehle
 ```bash
 # Daten
-python scripts/collect.py import <ordner> | reddit --subreddit <name> | url <url>   # -> data/raw/
-python scripts/prepare.py [--clip-filter] [--fit pad]   # -> data/processed/{64,128}/ + data/wednesday-frogs.zip
+python scripts/collect.py archive [--clip] [--limit 20]   # Mittwochs-Subreddits über Arctic Shift -> data/raw/reddit_archive/
+python scripts/collect.py inat --n 3000                   # iNaturalist-Froschfotos -> data/pretrain/raw/
+python scripts/collect.py import <ordner> [--clip]        # -> data/raw/manual/
+python scripts/prepare.py [--clip-filter] [--fit pad]     # -> data/processed/{64,128}/ + data/wednesday-frogs.zip
+python scripts/prepare.py --raw data/pretrain/raw --out data/pretrain/processed --zip-name frog-photos
+
+# Zwei-Stufen-Training (Kaggle-Notebook macht genau das)
+python train.py --data <photos>/128,<memes>/128 --res 64 --steps 40000 --out runs/pre
+python train.py --init runs/pre/last.pt --data <memes>/128 --res 64 --steps 10000 --lr 1e-4 --out runs/ft
 
 # Smoke-Test lokal (~10 min auf MPS, Loss sollte in ~400 Schritten von ~1 auf <0,1 fallen)
 python train.py --data data/processed/64 --res 64 --base 32 --batch 16 --steps 1500 --warmup 100 --lr 5e-4 \
@@ -30,10 +37,15 @@ Ohne echte Daten: Fake-Bilder erzeugen (beige Ellipse + 2 schwarze Augen auf zuf
 ## Architektur
 - **`wednesday/flow.py`** ist das Herzstück. Konvention: **t=0 = Rauschen, t=1 = Bild**; `x_t = (1-t)·x0 + t·x1`, Ziel `v = x1 - x0`, MSE-Loss. `t` wird logit-normal gezogen (SD3-Stil). `sample()` integriert die ODE mit Heun (letzter Schritt Euler) oder Euler und gibt Werte in `[-1, 1]` zurück. Wer die Zeitkonvention ändert, muss Loss und Sampler zusammen ändern.
 - **`wednesday/model.py`**: UNet mit Zeit-Embedding über Scale/Shift in jedem ResBlock, Attention nur bei 16×16 und in der Mitte, Ausgangs-Convs auf Null initialisiert. `UNet.config` wird in Checkpoints gespeichert, und `load_model()` (`wednesday/__init__.py`) baut daraus das Modell neu. **Neue Konstruktor-Argumente müssen also auch in `self.config` stehen**, sonst passen alte Checkpoints nicht mehr.
-- **Checkpoint-Formate**: `last.pt` (model, ema, opt, sched, scaler, step, model_config, args) dient zum Resume. `frog.pt` (nur `ema` + `model_config` + `step`) ist für die Inference. `train.py` setzt automatisch bei `<out>/last.pt` fort. Deshalb muss auf Colab das `--out` auf Drive liegen.
-- **`wednesday/data.py`**: Lädt alle Bilder einmal in den RAM (der Datensatz ist klein) und augmentiert stark (RandomResizedCrop, Flip, ColorJitter), gegen Memorisierung. `to_pil`/`make_grid` werden von Training, `generate.py` und `app.py` gemeinsam genutzt.
+- **Checkpoint-Formate**: `last.pt` (model, ema, opt, sched, scaler, step, model_config, args) dient zum Resume. `--init` lädt nur Gewichte (auch aus `frog.pt`) und übernimmt die Architektur aus dem Checkpoint; Optimizer, Schedule und Schritt starten neu, EMA-Warmup ist dabei aus. `frog.pt` (nur `ema` + `model_config` + `step`) ist für die Inference. `train.py` setzt automatisch bei `<out>/last.pt` fort. Deshalb muss auf Colab das `--out` auf Drive liegen.
+- **`wednesday/data.py`**: `--data` darf mehrere kommagetrennte Ordner enthalten. Trainiert wird bei `--res 64` aus den 128er Bildern (nur Herunterskalieren, schärfer). Lädt alle Bilder einmal in den RAM (der Datensatz ist klein) und augmentiert stark (RandomResizedCrop, Flip, ColorJitter), gegen Memorisierung. `to_pil`/`make_grid` werden von Training, `generate.py` und `app.py` gemeinsam genutzt.
 - Gerätewahl über `get_device()`: cuda > mps > cpu. AMP gibt es nur auf CUDA (bf16 falls unterstützt, sonst fp16 mit GradScaler).
-- **Reddit-Daten:** `collect.py reddit` (gallery-dl) wird von Reddit geblockt („blocked by network security“), auch mit User-Agent oder Browser-Cookies (macOS verweigert dem Terminal den Zugriff auf die Chrome-Cookies). Funktionierender Weg: Chrome-Erweiterung *Download All Images* auf der Subreddit-Seite → Zip entpacken → `collect.py import`. Der Junk-Filter `is_junk()` (Dateiname + kürzere Seite < 200 px) fängt Avatare und Icons. Werbeanzeigen und Reddit-Maskottchen rutschen durch. Reddit liefert jedes Bild in mehreren Größen, daher entfernt das Dedupe in `prepare.py` viele Bilder (pHash-Abstand 0), das ist korrekt.
+- **Datenquellen (`scripts/collect.py`)**: Alle Quellen laufen durch `ingest()`: `is_junk()` (Dateiname + kürzere Seite < 200 px) → pHash-Dedupe gegen den Zielbaum (größte Version gewinnt) → optional CLIP. Abgelehnte Bilder werden nach `data/rejected/<quelle>/` kopiert, nie gelöscht. `data/cache/<quelle>.seen` merkt sich verarbeitete Post- und Foto-IDs, damit von Hand gelöschte Bilder bei erneutem Lauf nicht zurückkommen. Metadaten (Titel/Score bzw. Art/Lizenz/Urheber) liegen in `data/cache/*_metadata.jsonl`.
+  - `archive`: **Arctic Shift** (`arctic-shift.photon-reddit.com/api/posts/search`, ohne Login) liefert die Post-URLs, Download direkt von `i.redd.it`/`i.imgur.com` (`imgur.com/<id>` → `i.imgur.com/<id>.jpg`). Die API verlangt `after`/`before` (Unix-Sekunden) und antwortet unter Last mit `{"error": "Timeout. Maybe slow down a bit"}`, `get_json()` wartet dann und versucht es erneut.
+  - `inat`: iNaturalist API, `quality_grade=research`, nur erwachsene Tiere (`term_id=1&term_value_id=2`), nur Fotos aus dem `inaturalist-open-data`-Bucket (freie Lizenz), Größe `medium`, ≤ 1 API-Anfrage/s.
+  - **Ausbeute (Stand 2026-11-11):** `archive` über 4 Subreddits: 1774 Posts → 950 Bilder geladen (598 Text/Galerie/Video, 226 gelöscht) → 557 behalten (291 Duplikate, 6 zu klein, 101 ohne Frosch laut CLIP; darunter ~10 echte Frösche mit Wert 0,2–0,3). `inat`: 2430 Fotos, aber die rundlichen Gattungen liefern mit „nur erwachsene“ zusammen nur 184 (*Breviceps* 82, *Ceratophrys* 51, *Pyxicephalus* 48, *Lepidobatrachus* 3). Ergebnis: `wednesday-frogs.zip` 644 Memes (23 MB), `frog-photos.zip` 2430 Fotos (110 MB).
+  - Direkt von reddit.com geht nicht: gallery-dl wird geblockt („blocked by network security“), auch mit User-Agent oder Browser-Cookies (macOS verweigert dem Terminal die Chrome-Cookies). Die Browser-Erweiterung *Download All Images* funktioniert, sammelt aber Avatare, Werbung und jedes Bild in mehreren Größen ein.
+- **`wednesday/clipfilter.py`** (`FrogFilter`): open_clip ViT-B-32 zero-shot, Summe der Wahrscheinlichkeiten der Frosch-Prompts gegen die anderen Prompts, Schwelle **0,3**. Kalibriert an Bildern, die der User von Hand sortiert hat: alle 46 eigenen + 39/41 behaltenen Reddit-/WhatsApp-Bilder werden angenommen (abgelehnt nur Sessel und Diagramm ohne Frosch), alle Werbebilder liegen bei 0,00 bis 0,08. Die eigenen Prompts gegen das Reddit-Maskottchen (Snoo) sind nötig, sonst kommt es mit ~0,5 durch. Memes ohne Frosch, die der User mag, überleben `--clip` nicht.
 - **`wednesday/formats.py`** ist die einzige Liste der akzeptierten Dateiendungen (inkl. `.jfif`, `.avif`, `.heic` über das optionale `pillow-heif`). `collect.py`, `prepare.py` und `data.py` nutzen sie alle. `prepare.py` schneidet standardmäßig das größte mittige Quadrat aus, weil der User Rohbilder ungefiltert und in beliebigem Seitenverhältnis reinwirft.
 - `app.py` importiert `add_caption` aus `generate.py`. Die Schrift sucht zuerst Impact, dann Fallbacks.
 
@@ -42,13 +54,12 @@ Ohne echte Daten: Fake-Bilder erzeugen (beige Ellipse + 2 schwarze Augen auf zuf
 - **Unkonditioniert**: keine Themen- oder Textsteuerung, Knopfdruck ergibt einen zufälligen Frosch.
 - **Pixelraum, 64 px als Standard** (~18M Parameter mit `base=64, mults=1,2,2,4`), danach optional 128 px. Die Ausgabe wird per Nearest-Neighbor auf 512 px hochskaliert, damit der Pixel-Look bleibt.
 - Daten musste der User erst sammeln, Ziel sind 300 bis 2000 Bilder, nur zur privaten Nutzung. Bei so wenigen Bildern wird teilweise Memorisierung erwartet und akzeptiert.
-- Später, nicht jetzt: Pretraining auf allgemeinen Frosch-Fotos, dann Fine-Tune auf die Memes. Themensteuerung über CLIP-Embeddings + CFG. Latent Flow Matching mit SD-VAE für 256 px.
+- Pretraining auf iNaturalist-Froschfotos (+ Memes), dann Fine-Tune nur auf die Memes (umgesetzt). Später: Themensteuerung über CLIP-Embeddings + CFG. Latent Flow Matching mit SD-VAE für 256 px.
 
 ## Offen / ungetestet
 Verifiziert ist nur die lokale Pipeline mit Fake-Bildern: prepare → Training → Resume → `generate.py --text`. Die Samples konvergieren nach 1200 Schritten zu sauberen Blobs. **Noch nie gelaufen** sind:
-- `notebooks/train_kaggle.ipynb` auf Kaggle/Colab. Es klont das öffentliche Repo `alexanderulbrich/wednesday` (Kaggle braucht dafür Internet = On). Die Pfade `/kaggle/input/wednesday-frogs/64` gehen davon aus, dass Kaggle die Zip mit den Ordnern `64/` und `128/` entpackt.
+- `notebooks/train_kaggle.ipynb` auf Kaggle/Colab (zwei Datasets `wednesday-frogs` + `frog-photos`, zwei Stufen). Es klont das öffentliche Repo `alexanderulbrich/wednesday` (Kaggle braucht dafür Internet = On). `find_dataset()` sucht den Ordner `128/` unterhalb von `/kaggle/input`, egal wie Kaggle die Zip einhängt.
 - `scripts/collect.py url` (gallery-dl) für Nicht-Reddit-Seiten. `collect.py reddit` ist faktisch tot, siehe oben.
-- `prepare.py --clip-filter` (open_clip ist nicht installiert, die Schwellen 0,6/0,3 sind geraten).
 - `app.py` (gradio ist nicht installiert).
-- Training mit echten Daten, 128 px und die Standard-Hyperparameter (80k Schritte, lr 2e-4, warmup 1000).
+- Training mit echten Daten auf GPU, 128 px, und die Hyperparameter der zwei Stufen (40k Pretrain, 10k Fine-Tune mit lr 1e-4). `--init` ist nur lokal auf Fake-Daten getestet (Fine-Tune startet mit Loss 0,14 statt 1,1).
 - Hinweis: Beim Resume mit anderem `--steps` wird der Cosine-Schedule neu berechnet. Bei `--steps` < `--warmup` erreicht die LR nie ihren Zielwert.

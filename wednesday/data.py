@@ -19,8 +19,10 @@ def list_images(folder: str | Path) -> list[Path]:
 class FrogDataset(Dataset):
     """Loads every image once into RAM (datasets here are small) and augments on the fly."""
 
-    def __init__(self, folder: str | Path, res: int = 64, augment: bool = True, limit: int | None = None):
-        paths = list_images(folder)
+    def __init__(self, folder: str | Path | list, res: int = 64, augment: bool = True, limit: int | None = None):
+        # several folders allowed: a list or a comma separated string ("frog-photos/128,wednesday-frogs/128")
+        folders = folder if isinstance(folder, (list, tuple)) else str(folder).split(",")
+        paths = [p for f in folders for p in list_images(f.strip() if isinstance(f, str) else f)]
         if limit:
             paths = paths[:limit]
         if not paths:

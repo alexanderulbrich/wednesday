@@ -4,8 +4,12 @@
     python scripts/prepare.py --clip-filter        # also drop images CLIP thinks have no frog
     python scripts/prepare.py --fit pad            # pad instead of center-crop (keeps whole meme)
 
-Then look through data/processed/review/ (if any) by eye, move keepers into data/raw/manual/, and rerun.
+Rejected images are copied to data/processed/review/ (score in the file name). The filter is optional: images you
+want to keep anyway (e.g. memes without a frog) only survive runs without --clip-filter.
 Upload data/wednesday-frogs.zip as a Kaggle Dataset (or to Google Drive for Colab).
+
+Frog photos for pretraining (from `collect.py inat`):
+    python scripts/prepare.py --raw data/pretrain/raw --out data/pretrain/processed --zip-name frog-photos
 """
 
 from __future__ import annotations
@@ -51,35 +55,18 @@ def dedupe(paths: list[Path], max_dist: int) -> list[Path]:
     return kept
 
 
-def clip_filter(paths: list[Path], review_dir: Path, keep_thr: float, drop_thr: float) -> list[Path]:
-    import open_clip
-    import torch
+def clip_filter(paths: list[Path], review_dir: Path, threshold: float) -> list[Path]:
+    """Drop images without a frog (CLIP); copies of the rejected ones go to review_dir for a look."""
+    from wednesday.clipfilter import FrogFilter
 
-    from wednesday import get_device
-
-    device = get_device()
-    model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="laion2b_s34b_b79k")
-    tok = open_clip.get_tokenizer("ViT-B-32")
-    model = model.to(device).eval()
-    prompts = ["a picture of a frog", "a cartoon frog", "a meme with a frog",
-               "a picture of a person", "a screenshot of text", "a random object"]
-    with torch.no_grad():
-        txt = model.encode_text(tok(prompts).to(device))
-        txt = txt / txt.norm(dim=-1, keepdim=True)
-    review_dir.mkdir(parents=True, exist_ok=True)
-    kept = []
-    for p in paths:
-        with torch.no_grad():
-            img = preprocess(Image.open(p).convert("RGB")).unsqueeze(0).to(device)
-            f = model.encode_image(img)
-            f = f / f.norm(dim=-1, keepdim=True)
-            probs = (100 * f @ txt.T).softmax(-1)[0]
-        frog = probs[:3].sum().item()
-        if frog >= keep_thr:
-            kept.append(p)
-        elif frog >= drop_thr:
-            shutil.copy2(p, review_dir / p.name)
-    print(f"clip filter: kept {len(kept)}, {len(list(review_dir.iterdir()))} in review/")
+    ff = FrogFilter(threshold=threshold)
+    kept, rejected = ff.split(paths)
+    shutil.rmtree(review_dir, ignore_errors=True)
+    if rejected:
+        review_dir.mkdir(parents=True)
+        for q, score in rejected:
+            shutil.copy2(q, review_dir / f"{score:.2f}_{q.name}")
+    print(f"clip filter: kept {len(kept)}, {len(rejected)} without frog -> {review_dir}")
     return kept
 
 
@@ -92,9 +79,9 @@ def main():
     ap.add_argument("--min-size", type=int, default=DEFAULT_MIN_SIZE, help="drop images smaller than this")
     ap.add_argument("--hash-dist", type=int, default=5)
     ap.add_argument("--clip-filter", action="store_true")
-    ap.add_argument("--keep-thr", type=float, default=0.6)
-    ap.add_argument("--drop-thr", type=float, default=0.3)
+    ap.add_argument("--clip-threshold", type=float, default=None, help="frog probability needed (default: calibrated)")
     ap.add_argument("--no-zip", action="store_true")
+    ap.add_argument("--zip-name", default="wednesday-frogs", help="zip (= Kaggle dataset) name, written next to --out")
     a = ap.parse_args()
 
     paths, skipped = scan(a.raw)
@@ -110,7 +97,9 @@ def main():
         paths = [p for p in paths if p.suffix.lower() not in HEIF_EXTS]
     paths = dedupe(paths, a.hash_dist)
     if a.clip_filter:
-        paths = clip_filter(paths, a.out / "review", a.keep_thr, a.drop_thr)
+        from wednesday.clipfilter import DEFAULT_THRESHOLD
+
+        paths = clip_filter(paths, a.out / "review", a.clip_threshold or DEFAULT_THRESHOLD)
 
     resolutions = [int(r) for r in a.res.split(",")]
     for r in resolutions:
@@ -136,7 +125,7 @@ def main():
     if not a.no_zip:
         import zipfile
 
-        z = a.out.parent / "wednesday-frogs.zip"
+        z = a.out.parent / f"{a.zip_name}.zip"
         with zipfile.ZipFile(z, "w", zipfile.ZIP_STORED) as zf:  # PNGs are already compressed
             for r in resolutions:
                 for f in sorted((a.out / str(r)).iterdir()):
