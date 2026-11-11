@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import torch
 
 
 def get_device(prefer: str | None = None) -> torch.device:
+    import torch
+
     if prefer:
         return torch.device(prefer)
     if torch.cuda.is_available():
@@ -17,6 +22,8 @@ def get_device(prefer: str | None = None) -> torch.device:
 
 def load_model(ckpt_path: str, device: torch.device | str = "cpu", use_ema: bool = True):
     """Load a UNet from a checkpoint written by train.py. Returns (model, config)."""
+    import torch
+
     from .model import UNet
 
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)

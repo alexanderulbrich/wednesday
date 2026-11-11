@@ -1,12 +1,16 @@
 """Collect raw frog memes into data/raw/.
 
 Examples:
-    # import a folder you filled by hand (chat exports, browser downloads, ...)
+    # import a folder you filled by hand (chat exports, browser downloads, ...).
+    # Skips website junk (avatars, community icons, ...) and images smaller than 200px.
     python scripts/collect.py import ~/Downloads/frogs
 
-    # download from subreddits via gallery-dl (pip install -e '.[data]')
-    python scripts/collect.py reddit --subreddit ItIsWednesdayMyDudes --limit 1000
-    python scripts/collect.py reddit --subreddit memes --search "wednesday my dudes" --limit 300
+    # RECOMMENDED for reddit: open the subreddit in Chrome, scroll a lot, save everything with the
+    # "Download All Images" extension, unzip, then import that folder as above.
+
+    # download from a subreddit via gallery-dl (pip install -e '.[data]').
+    # Reddit blocks anonymous downloads -> reuse the login from your browser (be logged in to reddit there):
+    python scripts/collect.py reddit --subreddit ItIsWednesday --limit 1000 --browser chrome
 
     # any URL gallery-dl understands (imgur album, knowyourmeme gallery page, ...)
     python scripts/collect.py url https://imgur.com/a/XXXX
@@ -23,35 +27,54 @@ import subprocess
 import sys
 from pathlib import Path
 
+# find the project package even if the editable install is broken (e.g. iCloud hides the venv's .pth files)
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from collections import Counter  # noqa: E402
+
+from wednesday.formats import DEFAULT_MIN_SIZE, is_junk, report_junk, report_skipped, scan  # noqa: E402
+
 RAW = ROOT / "data" / "raw"
-IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 
 
-def gallery_dl(url: str, dest: Path, limit: int | None) -> None:
-    exe = shutil.which("gallery-dl")
+def gallery_dl(url: str, dest: Path, limit: int | None, browser: str | None = None) -> None:
+    # prefer the gallery-dl that sits next to this Python (works even if the venv isn't activated)
+    local = Path(sys.executable).parent / "gallery-dl"
+    exe = str(local) if local.exists() else shutil.which("gallery-dl")
     if not exe:
         sys.exit("gallery-dl not found – install with: pip install -e '.[data]'")
     dest.mkdir(parents=True, exist_ok=True)
-    cmd = [exe, "--directory", str(dest), "--filter", "extension in ('jpg','jpeg','png','webp')"]
+    cmd = [exe, "--directory", str(dest), "--filter", "extension in ('jpg','jpeg','jfif','png','webp','avif','gif')"]
     if limit:
         cmd += ["--range", f"1-{limit}"]
+    if browser:
+        cmd += ["--cookies-from-browser", browser]
     cmd.append(url)
     print(" ".join(cmd))
     subprocess.run(cmd, check=False)
 
 
-def import_folder(src: Path, dest: Path) -> None:
+def import_folder(src: Path, dest: Path, min_size: int = DEFAULT_MIN_SIZE, keep_all: bool = False) -> None:
+    src = src.expanduser()
+    if not src.is_dir():
+        sys.exit(f"Ordner nicht gefunden: {src}\nTipp: den Ordner aus dem Finder ins Terminal ziehen, dann stimmt der Pfad.")
     dest.mkdir(parents=True, exist_ok=True)
-    n = 0
-    for p in sorted(src.expanduser().rglob("*")):
-        if p.suffix.lower() in IMG_EXTS and p.is_file():
-            digest = hashlib.sha1(p.read_bytes()).hexdigest()[:16]
-            target = dest / f"{digest}{p.suffix.lower()}"
-            if not target.exists():
-                shutil.copy2(p, target)
-                n += 1
-    print(f"imported {n} new images into {dest}")
+    images, skipped = scan(src)
+    n, junk = 0, Counter()
+    for p in images:
+        why = None if keep_all else is_junk(p, min_size)
+        if why:
+            junk[why] += 1
+            continue
+        digest = hashlib.sha1(p.read_bytes()).hexdigest()[:16]
+        target = dest / f"{digest}{p.suffix.lower()}"
+        if not target.exists():
+            shutil.copy2(p, target)
+            n += 1
+    print(f"{len(images)} Bilder gefunden, {n} neu nach {dest} importiert")
+    report_junk(junk)
+    report_skipped(skipped)
 
 
 def main():
@@ -62,13 +85,17 @@ def main():
     r.add_argument("--subreddit", required=True)
     r.add_argument("--search", default=None)
     r.add_argument("--limit", type=int, default=500)
+    r.add_argument("--browser", default=None, help="take login cookies from this browser (chrome, firefox, safari, ...)")
 
     u = sub.add_parser("url")
     u.add_argument("url")
     u.add_argument("--limit", type=int, default=None)
+    u.add_argument("--browser", default=None)
 
     i = sub.add_parser("import")
     i.add_argument("folder", type=Path)
+    i.add_argument("--min-size", type=int, default=DEFAULT_MIN_SIZE, help="drop images whose shorter side is smaller")
+    i.add_argument("--keep-all", action="store_true", help="import everything, no junk filter")
 
     a = p.parse_args()
     if a.cmd == "reddit":
@@ -76,11 +103,11 @@ def main():
             url = f"https://www.reddit.com/r/{a.subreddit}/search/?q={a.search.replace(' ', '+')}&restrict_sr=1"
         else:
             url = f"https://www.reddit.com/r/{a.subreddit}/top/?t=all"
-        gallery_dl(url, RAW / f"reddit_{a.subreddit}", a.limit)
+        gallery_dl(url, RAW / f"reddit_{a.subreddit}", a.limit, a.browser)
     elif a.cmd == "url":
-        gallery_dl(a.url, RAW / "web", a.limit)
+        gallery_dl(a.url, RAW / "web", a.limit, a.browser)
     else:
-        import_folder(a.folder, RAW / "manual")
+        import_folder(a.folder, RAW / "manual", a.min_size, a.keep_all)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms as T
 
-IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
+from .formats import IMG_EXTS
 
 
 def list_images(folder: str | Path) -> list[Path]:

@@ -8,6 +8,7 @@ Ein kleines, selbst gebautes Flow-Matching-Modell (Rectified Flow + UNet), das u
 ## Umgebung
 - Entwicklung und Inference laufen auf dem Mac (Apple Silicon, PyTorch **MPS**). **Training passiert auf Kaggle/Colab** (T4/P100), lokal nur Smoke-Tests (≈2,5 it/s bei `--base 32 --batch 16`).
 - venv mit uv: `uv venv && uv pip install -e '.[data]'`. Extras: `clip` (open_clip für den Frosch-Filter), `app` (gradio). Python immer über `.venv/bin/python`.
+- **iCloud-Falle:** Der Projektordner liegt in den per iCloud synchronisierten „Dokumenten“. iCloud setzt das macOS-Flag `hidden` auf die `.pth`-Dateien der venv, und Python 3.12.12 ignoriert diese dann (`python -v` zeigt `Skipping hidden .pth file`). Damit ist der Editable Install weg. Abhilfe: `chflags nohidden .venv/lib/python3.12/site-packages/*.pth`. `scripts/*.py` fügen deshalb den Projekt-Root selbst in `sys.path` ein, die Skripte im Root brauchen das nicht.
 - Es gibt keine Test-Suite und keinen Linter. Der Smoke-Test unten ist der Funktionstest.
 
 ## Befehle
@@ -32,6 +33,8 @@ Ohne echte Daten: Fake-Bilder erzeugen (beige Ellipse + 2 schwarze Augen auf zuf
 - **Checkpoint-Formate**: `last.pt` (model, ema, opt, sched, scaler, step, model_config, args) dient zum Resume. `frog.pt` (nur `ema` + `model_config` + `step`) ist für die Inference. `train.py` setzt automatisch bei `<out>/last.pt` fort. Deshalb muss auf Colab das `--out` auf Drive liegen.
 - **`wednesday/data.py`**: Lädt alle Bilder einmal in den RAM (der Datensatz ist klein) und augmentiert stark (RandomResizedCrop, Flip, ColorJitter), gegen Memorisierung. `to_pil`/`make_grid` werden von Training, `generate.py` und `app.py` gemeinsam genutzt.
 - Gerätewahl über `get_device()`: cuda > mps > cpu. AMP gibt es nur auf CUDA (bf16 falls unterstützt, sonst fp16 mit GradScaler).
+- **Reddit-Daten:** `collect.py reddit` (gallery-dl) wird von Reddit geblockt („blocked by network security“), auch mit User-Agent oder Browser-Cookies (macOS verweigert dem Terminal den Zugriff auf die Chrome-Cookies). Funktionierender Weg: Chrome-Erweiterung *Download All Images* auf der Subreddit-Seite → Zip entpacken → `collect.py import`. Der Junk-Filter `is_junk()` (Dateiname + kürzere Seite < 200 px) fängt Avatare und Icons. Werbeanzeigen und Reddit-Maskottchen rutschen durch. Reddit liefert jedes Bild in mehreren Größen, daher entfernt das Dedupe in `prepare.py` viele Bilder (pHash-Abstand 0), das ist korrekt.
+- **`wednesday/formats.py`** ist die einzige Liste der akzeptierten Dateiendungen (inkl. `.jfif`, `.avif`, `.heic` über das optionale `pillow-heif`). `collect.py`, `prepare.py` und `data.py` nutzen sie alle. `prepare.py` schneidet standardmäßig das größte mittige Quadrat aus, weil der User Rohbilder ungefiltert und in beliebigem Seitenverhältnis reinwirft.
 - `app.py` importiert `add_caption` aus `generate.py`. Die Schrift sucht zuerst Impact, dann Fallbacks.
 
 ## Entscheidungen aus dem Plan
@@ -44,7 +47,7 @@ Ohne echte Daten: Fake-Bilder erzeugen (beige Ellipse + 2 schwarze Augen auf zuf
 ## Offen / ungetestet
 Verifiziert ist nur die lokale Pipeline mit Fake-Bildern: prepare → Training → Resume → `generate.py --text`. Die Samples konvergieren nach 1200 Schritten zu sauberen Blobs. **Noch nie gelaufen** sind:
 - `notebooks/train_kaggle.ipynb` auf Kaggle/Colab. Es klont das öffentliche Repo `alexanderulbrich/wednesday` (Kaggle braucht dafür Internet = On). Die Pfade `/kaggle/input/wednesday-frogs/64` gehen davon aus, dass Kaggle die Zip mit den Ordnern `64/` und `128/` entpackt.
-- `scripts/collect.py reddit`/`url` (gallery-dl): Die Subreddit-Namen sind unverifiziert, und die Reddit-Search-URL ist eventuell nicht von gallery-dl unterstützt.
+- `scripts/collect.py url` (gallery-dl) für Nicht-Reddit-Seiten. `collect.py reddit` ist faktisch tot, siehe oben.
 - `prepare.py --clip-filter` (open_clip ist nicht installiert, die Schwellen 0,6/0,3 sind geraten).
 - `app.py` (gradio ist nicht installiert).
 - Training mit echten Daten, 128 px und die Standard-Hyperparameter (80k Schritte, lr 2e-4, warmup 1000).

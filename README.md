@@ -10,15 +10,22 @@ uv pip install -e '.[data]'          # + '.[clip]' für den Frosch-Filter, '.[ap
 
 ## 1. Daten sammeln
 ```bash
-python scripts/collect.py import ~/Downloads/frogs                        # eigene Sammlung / Chat-Export
-python scripts/collect.py reddit --subreddit <name> --limit 1000          # via gallery-dl
-python scripts/collect.py url <imgur-/knowyourmeme-URL>
+python scripts/collect.py import ~/Downloads/frogs                        # eigene Sammlung / Chat-Export / Browser-Download
+python scripts/collect.py url <imgur-/knowyourmeme-URL>                   # via gallery-dl
 ```
+**Reddit** (z.B. r/ItIsWednesday): gallery-dl wird von Reddit geblockt. Stattdessen den Subreddit in Chrome öffnen, lange
+runterscrollen, mit der Erweiterung *Download All Images* alles speichern, die Zip entpacken und den Ordner importieren
+(`collect.py import ~/Downloads/www.reddit.com`). Mit `top/?t=year`, `hot`, `new` wiederholen, um mehr Bilder zu bekommen.
+
+Der Import sortiert Website-Grafiken (Avatare, Community-Icons, `64x64.png` …) und Bilder unter 200 px automatisch aus
+(`--min-size`, `--keep-all`). Werbebilder rutschen trotzdem durch, die erwischt `prepare.py --clip-filter` oder Handarbeit.
 Ziel sind 300 bis 2000 Bilder. Mehr Bilder bedeuten weniger reines Auswendiglernen.
+Einfach alles reinwerfen: JPG, PNG, WebP, GIF, `.jfif`, `.avif` und iPhone-`.heic` werden gelesen, in jeder Auflösung (ab 96 px)
+und jedem Seitenverhältnis. Videos und andere Dateien werden übersprungen und gemeldet.
 
 ## 2. Aufbereiten
 ```bash
-python scripts/prepare.py                 # dedupe, quadratisch, 64 + 128 px, data/wednesday-frogs.zip
+python scripts/prepare.py                 # dedupe, mittiges Quadrat ausschneiden, 64 + 128 px, data/wednesday-frogs.zip
 python scripts/prepare.py --clip-filter   # optional: Nicht-Frösche rauswerfen (Grenzfälle -> data/processed/review/)
 ```
 
