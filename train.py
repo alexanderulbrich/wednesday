@@ -78,9 +78,30 @@ def parse_args():
     p.add_argument("--resume", default=None)
     p.add_argument("--init", default=None, help="start from these weights (fine-tune): fresh optimizer, schedule, step")
     p.add_argument("--device", default=None)
+    p.add_argument("--amp", default="auto", choices=["auto", "bf16", "fp16", "off"],
+                   help="16-bit mixed precision on CUDA (auto: bf16 on Ampere+, else fp16)")
     p.add_argument("--workers", type=int, default=2)
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()
+
+
+def pick_amp(device: torch.device, mode: str = "auto") -> torch.dtype | None:
+    """Wählt das Zahlenformat für die gemischte Genauigkeit (siehe unten bei "Gemischte Genauigkeit").
+
+    Rückgabe: torch.bfloat16, torch.float16 oder None (= alles in 32 Bit).
+    Achtung Falle: torch.cuda.is_bf16_supported() sagt auch bei älteren Karten wie der T4 "ja",
+    weil bf16 dort *simuliert* werden kann – nur ist das etwa 20× langsamer. Echtes bf16 können
+    erst Karten ab der Ampere-Generation (Compute Capability 8.0, z.B. A100). Deshalb fragen wir
+    direkt nach der Generation der Karte.
+    """
+    if device.type != "cuda" or mode == "off":
+        return None  # Mac (MPS) und CPU: immer 32 Bit
+    if mode == "bf16":
+        return torch.bfloat16
+    if mode == "fp16":
+        return torch.float16
+    major, _ = torch.cuda.get_device_capability(device)
+    return torch.bfloat16 if major >= 8 else torch.float16
 
 
 def infinite(loader):
@@ -96,6 +117,14 @@ def main():
     out = Path(args.out)
     (out / "samples").mkdir(parents=True, exist_ok=True)
     print(f"device={device}")
+    amp_dtype = pick_amp(device, args.amp)
+    if device.type == "cuda":
+        # cuDNN probiert beim ersten Batch mehrere Rechenwege für die Faltungen aus und merkt sich
+        # den schnellsten. Lohnt sich, weil unsere Bilder immer gleich groß sind.
+        torch.backends.cudnn.benchmark = True
+        cap = torch.cuda.get_device_capability(device)
+        print(f"gpu={torch.cuda.get_device_name(device)} (sm {cap[0]}.{cap[1]}), "
+              f"amp={str(amp_dtype).replace('torch.', '') if amp_dtype else 'off (fp32)'}")
 
     # ---------------------------------------------------------------- Daten (Kapitel 3)
     ds = FrogDataset(args.data, res=args.res, augment=not args.no_augment, limit=args.limit)
@@ -140,12 +169,15 @@ def main():
     )
 
     # ---------------------------------------------------------------- Gemischte Genauigkeit
-    # Auf NVIDIA-Grafikkarten rechnen wir großteils mit 16-Bit- statt 32-Bit-Zahlen: etwa doppelt so
-    # schnell, halber Speicher. bf16 auf neueren Karten; auf älteren (T4/P100) fp16, das einen
-    # "GradScaler" braucht, damit sehr kleine Gradienten nicht zu 0 abgerundet werden.
+    # Auf NVIDIA-Grafikkarten rechnen wir großteils mit 16-Bit- statt 32-Bit-Zahlen: deutlich
+    # schneller, halber Speicher. Welches 16-Bit-Format, entscheidet pick_amp() oben:
+    #   bf16 auf neueren Karten (ab A100), fp16 auf älteren (T4/P100). fp16 kann sehr kleine Zahlen
+    #   nicht darstellen; der "GradScaler" multipliziert den Loss deshalb vor dem Rückwärtsrechnen
+    #   mit einem großen Faktor, damit kleine Gradienten nicht zu 0 abgerundet werden, und teilt danach
+    #   wieder durch.
     # Auf dem Mac (MPS) und der CPU bleibt alles bei 32 Bit.
-    use_amp = device.type == "cuda"
-    amp_dtype = torch.bfloat16 if use_amp and torch.cuda.is_bf16_supported() else torch.float16
+    use_amp = amp_dtype is not None
+    amp_dtype = amp_dtype or torch.float16  # Platzhalter; ohne AMP wird autocast ohnehin abgeschaltet
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp and amp_dtype == torch.float16)
 
     # ---------------------------------------------------------------- Weitermachen nach Abbruch
