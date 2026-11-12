@@ -1,29 +1,33 @@
-"""Collect training images.
+"""Kapitel 1 – Bilder sammeln.
 
-Memes go to data/raw/ (used by prepare.py), general frog photos to data/pretrain/raw/.
-Every source runs through the same pipeline: junk filter (avatars/icons/too small) -> duplicate check
-(perceptual hash, keeps the largest version) -> optional CLIP "is there a frog?" filter (--clip).
-CLIP rejects are copied to data/rejected/<source>/ for a look, nothing is deleted.
+Ein generatives Modell kann nur lernen, was es gezeigt bekommt. Dieses Skript besorgt zwei Sorten Bilder:
 
-Examples:
-    # all image posts of wednesday subreddits, via the public Arctic Shift reddit archive (no login, no page junk)
+* **Memes** -> data/raw/          das, was das Modell am Ende erzeugen soll
+* **Froschfotos** -> data/pretrain/raw/   damit es erst einmal lernt, wie Frösche überhaupt aussehen
+
+Quellen ("Unterbefehle"):
+    archive   alle Bild-Posts der Mittwochs-Subreddits über das öffentliche Reddit-Archiv Arctic Shift
+    inat      Fotos erwachsener Frösche und Kröten von iNaturalist (Naturbeobachtungs-Plattform)
+    import    ein eigener Ordner (Chat-Export, Downloads, ...)
+    dedupe    Duplikate aus einem vorhandenen Ordner räumen
+    url       alles, was das Programm gallery-dl versteht (Reddit selbst blockt es leider)
+
+Egal woher ein Bild kommt, es läuft durch dieselbe Filterkette (Funktion ``ingest``):
+    1. Müll raus: Website-Grafiken (Avatare, Icons) und zu kleine Bilder (Anhang A)
+    2. Duplikate raus: dasselbe Bild in anderer Größe, wir behalten die größte Version
+    3. optional (--clip): Bilder ohne Frosch raus (Anhang B). Abgelehnte kommen zum Durchsehen
+       nach data/rejected/<quelle>/, gelöscht wird nichts.
+
+Beispiele:
     python scripts/collect.py archive --clip
-    python scripts/collect.py archive --subreddit ItIsWednesday --limit 20     # quick test
-
-    # general frog & toad photos from iNaturalist (for pretraining)
+    python scripts/collect.py archive --subreddit ItIsWednesday --limit 20     # schneller Test
     python scripts/collect.py inat --n 3000
-
-    # a folder you filled by hand (chat exports, browser downloads, ...)
     python scripts/collect.py import ~/Desktop/frog --clip
-
-    # clean duplicates out of an existing folder (moved to data/duplicates/)
     python scripts/collect.py dedupe
-
-    # anything gallery-dl understands (imgur album, ...). Reddit itself blocks gallery-dl -> use `archive`.
     python scripts/collect.py url https://imgur.com/a/XXXX
 
-Re-running archive/inat only fetches posts/photos it has not seen before (data/cache/<source>.seen), so images
-you delete by hand from data/raw/ stay deleted.
+Wiederholtes Ausführen von archive/inat lädt nur Neues (gemerkt in data/cache/<quelle>.seen).
+Bilder, die du von Hand aus data/raw/ löschst, kommen also nicht zurück.
 """
 
 from __future__ import annotations
@@ -41,59 +45,73 @@ import urllib.request
 from collections import Counter
 from pathlib import Path
 
-# find the project package even if the editable install is broken (e.g. iCloud hides the venv's .pth files)
+# Das Projektpaket "wednesday" auch dann finden, wenn die Installation in der venv kaputt ist
+# (iCloud versteckt manchmal deren .pth-Dateien, siehe CLAUDE.md).
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from wednesday.formats import DEFAULT_MIN_SIZE, IMG_EXTS, is_junk, report_junk, report_skipped, scan  # noqa: E402
 
+# Wo was landet.
 DATA = ROOT / "data"
-RAW = DATA / "raw"
-PRETRAIN_RAW = DATA / "pretrain" / "raw"
-CACHE = DATA / "cache"
-REJECTED = DATA / "rejected"
+RAW = DATA / "raw"                          # Memes (Eingabe für prepare.py)
+PRETRAIN_RAW = DATA / "pretrain" / "raw"    # Froschfotos
+CACHE = DATA / "cache"                      # Zwischenspeicher beim Download, .seen-Listen, Metadaten
+REJECTED = DATA / "rejected"                # von CLIP abgelehnt, zum Durchsehen
 
+# So stellen wir uns bei den Servern vor: ehrlich, ohne persönliche Daten.
 USER_AGENT = "wednesday-frog-collector/0.1 (small personal hobby project)"
 WEDNESDAY_SUBS = ["ItIsWednesday", "wednesdaymydudes", "WednesdayFrog", "ItIsWednesdayMyDudes"]
 ARCTIC = "https://arctic-shift.photon-reddit.com/api/posts/search"
 INAT = "https://api.inaturalist.org/v1"
-# general frogs plus some round, chubby genera (more "wednesday frog" like body shapes)
+# Welche Frösche von iNaturalist, mit welchem Anteil: 2/3 Frösche aller Art, der Rest verteilt auf
+# rundliche, dicke Gattungen – deren Körperform kommt dem Mittwochsfrosch am nächsten.
 INAT_DEFAULT = [("Anura", 2 / 3), ("Breviceps", 1 / 15), ("Ceratophrys", 1 / 15), ("Lepidobatrachus", 1 / 15),
                 ("Pyxicephalus", 1 / 15), ("Bufonidae", 1 / 15)]
-HASH_DIST = 5  # perceptual-hash distance below which two images count as the same (same as prepare.py)
+# Ab welchem Unterschied (in Bits des Wahrnehmungs-Fingerabdrucks) zwei Bilder als verschieden gelten.
+HASH_DIST = 5
 
 
-# ----------------------------------------------------------------------------- helpers
+# ----------------------------------------------------------------------------- Helfer
 
 def http_get(url: str, retries: int = 4, timeout: int = 60) -> bytes:
+    """Lädt eine Adresse herunter. Bei Netzwerk-Schluckauf bis zu 4 Versuche mit wachsender Pause."""
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
+            # Verboten / nicht gefunden / gelöscht: Nochmal versuchen bringt nichts.
             if e.code in (403, 404, 410):
                 raise
             err = e
-        except Exception as e:  # noqa: BLE001 – timeouts, connection resets
+        except Exception as e:  # noqa: BLE001 – Zeitüberschreitung, Verbindungsabbruch, ...
             err = e
-        time.sleep(5 * (attempt + 1))
+        time.sleep(5 * (attempt + 1))  # 5 s, 10 s, 15 s, ...
     raise RuntimeError(f"{url}: {err}")
 
 
 def get_json(url: str, retries: int = 6) -> dict:
+    """Fragt eine Web-Schnittstelle (API) ab und gibt die Antwort als Python-Dictionary zurück."""
     for attempt in range(retries):
         d = json.loads(http_get(url))
         if not d.get("error"):
             return d
-        # arctic shift answers {"error": "Timeout. Maybe slow down a bit"} when busy
+        # Arctic Shift antwortet unter Last mit {"error": "Timeout. Maybe slow down a bit"}.
+        # Dann höflich warten und es erneut versuchen.
         print(f"  API: {d['error']} – warte {10 * (attempt + 1)} s")
         time.sleep(10 * (attempt + 1))
     raise RuntimeError(f"{url}: {d.get('error')}")
 
 
 def fingerprint(path: Path):
-    """(perceptual hash, pixel area) or None if unreadable."""
+    """(Wahrnehmungs-Fingerabdruck, Pixelanzahl) eines Bildes, oder None wenn es nicht lesbar ist.
+
+    Der Fingerabdruck (perceptual hash) beschreibt das grobe Aussehen in 64 Bits – gleiche Bilder in
+    anderer Größe oder Qualität bekommen (fast) denselben. Die Pixelanzahl brauchen wir, um bei
+    Duplikaten die größte Version zu behalten.
+    """
     import imagehash
     from PIL import Image
 
@@ -105,7 +123,10 @@ def fingerprint(path: Path):
 
 
 class Seen:
-    """IDs of posts/photos already processed by a source, so re-runs only fetch new ones."""
+    """Merkliste der schon verarbeiteten Posts/Fotos einer Quelle (eine ID pro Zeile in einer Datei).
+
+    Damit lädt ein erneuter Lauf nur Neues – und Bilder, die man von Hand gelöscht hat, bleiben weg.
+    """
 
     def __init__(self, name: str):
         CACHE.mkdir(parents=True, exist_ok=True)
@@ -115,17 +136,23 @@ class Seen:
     def add(self, ids) -> None:
         new = [i for i in ids if i not in self.ids]
         self.ids.update(new)
+        # Sofort anhängen (nicht erst am Ende), damit nach einem Abbruch nichts doppelt geladen wird.
         with self.path.open("a") as f:
             f.writelines(f"{i}\n" for i in new)
 
 
 def ingest(items: list[tuple[Path, str]], dest: Path, dedupe_against: Path, *, min_size: int, use_clip: bool,
            source: str, move: bool, keep_all: bool = False) -> None:
-    """Filter (junk, duplicates, CLIP) and copy/move images into dest.
+    """Die gemeinsame Filterkette aller Quellen: Müll -> Duplikate -> (CLIP) -> ab nach dest.
 
-    items: (source file, target file name). dedupe_against: folder whose images count as "already have".
+    items:          Liste von (Bilddatei, Zieldateiname).
+    dest:           Zielordner.
+    dedupe_against: Ordner, dessen Bilder als "haben wir schon" gelten.
+    move:           True = verschieben (Downloads aus dem Zwischenspeicher), False = kopieren (eigene Ordner).
     """
     dest.mkdir(parents=True, exist_ok=True)
+
+    # 1. Müll aussortieren und von allen anderen den Fingerabdruck berechnen.
     junk, candidates = Counter(), []
     for p, name in items:
         why = None if keep_all else is_junk(p, min_size)
@@ -135,16 +162,19 @@ def ingest(items: list[tuple[Path, str]], dest: Path, dedupe_against: Path, *, m
             continue
         candidates.append((p, name, *fp))
 
-    # websites serve the same image in several sizes: look at the largest version first and keep that one
+    # 2. Duplikate: Fingerabdrücke aller Bilder, die wir schon haben ...
     known = [fp[0] for q in scan(dedupe_against)[0] if (fp := fingerprint(q))]
     unique, dupes = [], 0
+    # ... und dann die neuen Kandidaten, größte zuerst. Webseiten liefern dasselbe Bild oft in
+    # mehreren Größen – wer zuerst kommt, wird behalten, also gewinnt die größte Version.
     for p, name, h, _ in sorted(candidates, key=lambda c: -c[3]):
-        if any(h - k < HASH_DIST for k in known):
+        if any(h - k < HASH_DIST for k in known):  # h - k = Anzahl unterschiedlicher Bits
             dupes += 1
         else:
             known.append(h)
             unique.append((p, name))
 
+    # 3. Optional: CLIP fragt bei jedem Bild "Ist da ein Frosch drauf?" (Anhang B).
     rejected = []
     if use_clip and unique:
         from wednesday.clipfilter import FrogFilter
@@ -158,17 +188,20 @@ def ingest(items: list[tuple[Path, str]], dest: Path, dedupe_against: Path, *, m
             if s >= ff.threshold:
                 keep.append((p, name))
             else:
+                # Nicht löschen, sondern mit dem Frosch-Wert im Namen zum Durchsehen ablegen.
                 rej_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(p, rej_dir / f"{s:.2f}_{name}")
                 rejected.append(p)
         unique = keep
 
+    # 4. Die Überlebenden an ihren Platz.
     for p, name in unique:
         (shutil.move if move else shutil.copy2)(str(p), dest / name)
-    if move:  # staged downloads that did not make it are not needed any more
+    if move:  # Was es aus dem Download-Zwischenspeicher nicht geschafft hat, wird nicht mehr gebraucht.
         for p, _ in items:
             p.unlink(missing_ok=True)
 
+    # 5. Bericht.
     print(f"{len(unique)} neue Bilder nach {dest.relative_to(ROOT)}")
     if dupes:
         print(f"{dupes} Duplikate übersprungen (gleiches Bild, evtl. andere Größe)")
@@ -177,14 +210,17 @@ def ingest(items: list[tuple[Path, str]], dest: Path, dedupe_against: Path, *, m
         print(f"{len(rejected)} ohne Frosch laut CLIP -> zum Durchsehen in {(REJECTED / source).relative_to(ROOT)}/")
 
 
-# ----------------------------------------------------------------------------- sources
+# ----------------------------------------------------------------------------- Quellen
 
 def import_folder(src: Path, *, min_size: int, keep_all: bool, use_clip: bool) -> None:
-    src = src.expanduser()
+    """Quelle "import": ein Ordner auf dem eigenen Rechner -> data/raw/manual/."""
+    src = src.expanduser()  # "~" in den echten Pfad übersetzen
     if not src.is_dir():
         sys.exit(f"Ordner nicht gefunden: {src}\nTipp: den Ordner aus dem Finder ins Terminal ziehen, dann stimmt der Pfad.")
     images, skipped = scan(src)
     print(f"{len(images)} Bilder gefunden in {src}")
+    # Zieldateiname = Prüfsumme des Dateiinhalts. Dieselbe Datei bekommt immer denselben Namen,
+    # und Namenskollisionen (zehn Mal "image.jpg") sind ausgeschlossen.
     items = [(p, f"{hashlib.sha1(p.read_bytes()).hexdigest()[:16]}{p.suffix.lower()}") for p in images]
     ingest(items, RAW / "manual", RAW, min_size=min_size, use_clip=use_clip, source="manual", move=False,
            keep_all=keep_all)
@@ -192,25 +228,39 @@ def import_folder(src: Path, *, min_size: int, keep_all: bool, use_clip: bool) -
 
 
 def direct_image_url(url: str) -> str | None:
-    """Turn a post URL into a direct image URL, or None for galleries, videos, text posts, ..."""
+    """Macht aus der Adresse eines Reddit-Posts eine direkte Bildadresse – oder None.
+
+    None für Text-Posts, Galerien, Videos und GIFs (Animationen nützen uns nichts).
+    """
     u = urllib.parse.urlparse(url.replace("&amp;", "&"))
     host, path = u.netloc.lower(), u.path
     ext = Path(path).suffix.lower()
+    # Alte Posts verlinken oft auf eine imgur-Seite (imgur.com/<id>) statt aufs Bild.
+    # Das Bild selbst liegt unter i.imgur.com/<id>.jpg (imgur liefert den richtigen Typ aus).
     if host == "imgur.com" and path.count("/") == 1 and not ext and len(path) > 2:
-        return f"https://i.imgur.com{path}.jpg"  # imgur.com/<id> -> direct image (imgur fixes the type)
+        return f"https://i.imgur.com{path}.jpg"
+    # Alles mit Bild-Endung (i.redd.it, i.imgur.com, ...) ist schon direkt.
     if ext in IMG_EXTS and ext not in {".gif"} and host not in {"www.reddit.com", "reddit.com", "v.redd.it"}:
         return urllib.parse.urlunparse(u._replace(scheme="https"))
     return None
 
 
 def reddit_archive(subs: list[str], *, limit: int | None, min_size: int, use_clip: bool) -> None:
+    """Quelle "archive": alle Bild-Posts der angegebenen Subreddits -> data/raw/reddit_archive/.
+
+    Reddit selbst blockt Download-Programme. Arctic Shift ist ein öffentliches Archiv, das Reddit-Posts
+    sammelt und ohne Anmeldung abfragbar ist. Es liefert pro Post u.a. die Adresse des Bildes; das
+    Bild selbst laden wir dann direkt vom Bildserver (i.redd.it / i.imgur.com). So bekommen wir nur
+    die Post-Bilder – keine Avatare, keine Werbung, keine Seitengrafiken.
+    """
     seen = Seen("reddit_archive")
-    stage = CACHE / "stage_reddit"
+    stage = CACHE / "stage_reddit"  # Zwischenspeicher für Downloads, bis die Filter durch sind
     stage.mkdir(parents=True, exist_ok=True)
     stats, items, meta = Counter(), [], []
     for sub in subs:
-        after, n_sub = 1451606400, 0  # 2016-01-01
+        after, n_sub = 1451606400, 0  # Startzeitpunkt 1.1.2016 (Unix-Zeit in Sekunden)
         print(f"r/{sub}: lade Post-Liste ...")
+        # Seitenweise durch die Zeit blättern: 100 Posts ab "after", dann ab dem letzten davon weiter.
         while True:
             q = urllib.parse.urlencode({"subreddit": sub, "after": after, "before": int(time.time()), "limit": 100,
                                         "sort": "asc", "fields": "id,title,url,score,created_utc"})
@@ -233,31 +283,34 @@ def reddit_archive(subs: list[str], *, limit: int | None, min_size: int, use_cli
                     continue
                 target = stage / f"{pid}{Path(urllib.parse.urlparse(img).path).suffix.lower()}"
                 try:
-                    if not target.exists():
+                    if not target.exists():  # nach einem Abbruch schon Geladenes nicht erneut holen
                         target.write_bytes(http_get(img))
-                        time.sleep(0.3)
+                        time.sleep(0.3)  # kurze Pause, um die Server nicht zu überfahren
                     items.append((target, target.name))
                     meta.append({"file": target.name, "title": post.get("title"), "score": post.get("score"),
                                  "url": img, "created_utc": post["created_utc"]})
-                except Exception:  # noqa: BLE001 – deleted on reddit/imgur
+                except Exception:  # noqa: BLE001 – auf Reddit/imgur gelöscht
                     stats["Bild gelöscht/nicht erreichbar"] += 1
                 seen.add([pid])
+            # Weniger als 100 Posts auf der Seite = Ende des Subreddits erreicht.
             if limit and n_sub >= limit or len(posts) < 100:
                 break
-            time.sleep(1)
+            time.sleep(1)  # Arctic Shift ist ein Gemeinschaftsdienst – freundlich abfragen
         print(f"  {n_sub} neue Posts verarbeitet")
 
     print(f"{len(items)} Bilder heruntergeladen. " + ", ".join(f"{n}× {k}" for k, n in stats.items()))
     dest = RAW / "reddit_archive"
     ingest(items, dest, RAW, min_size=min_size, use_clip=use_clip, source="reddit_archive", move=True)
+    # Titel und Score der behaltenen Bilder aufheben – vielleicht will man später nach Beliebtheit filtern.
     kept = {p.name for p in dest.iterdir()}
     with (CACHE / "reddit_archive_metadata.jsonl").open("a") as f:
         f.writelines(json.dumps(m, ensure_ascii=False) + "\n" for m in meta if m["file"] in kept)
 
 
 def resolve_taxon(name: str) -> tuple[int, str]:
+    """Übersetzt einen wissenschaftlichen Namen (z.B. "Breviceps") in die interne iNaturalist-ID."""
     res = get_json(f"{INAT}/taxa?" + urllib.parse.urlencode({"q": name, "per_page": 10})).get("results", [])
-    exact = [t for t in res if t["name"].lower() == name.lower()]
+    exact = [t for t in res if t["name"].lower() == name.lower()]  # exakter Treffer bevorzugt
     if not (exact or res):
         sys.exit(f"Taxon nicht gefunden: {name}")
     t = (exact or res)[0]
@@ -265,6 +318,12 @@ def resolve_taxon(name: str) -> tuple[int, str]:
 
 
 def inaturalist(taxa: list[tuple[str, float]], n: int, *, min_size: int, use_clip: bool) -> None:
+    """Quelle "inat": Froschfotos von iNaturalist -> data/pretrain/raw/.
+
+    iNaturalist ist eine Plattform, auf der Menschen Tier- und Pflanzenbeobachtungen mit Foto hochladen.
+    "Research grade" heißt: Die Art wurde von der Community bestätigt. Wir nehmen pro Beobachtung
+    das erste Foto, nur von erwachsenen Tieren (keine Kaulquappen oder Laich) und nur frei lizenzierte.
+    """
     seen = Seen("inat")
     stage = CACHE / "stage_inat"
     stage.mkdir(parents=True, exist_ok=True)
@@ -274,10 +333,13 @@ def inaturalist(taxa: list[tuple[str, float]], n: int, *, min_size: int, use_cli
         tid, tname = resolve_taxon(name)
         print(f"{tname} (taxon {tid}): {want} Fotos ...")
         got, page = 0, 1
-        while got < want and page <= 50:  # API serves at most 10k results per query
+        # Seitenweise je 200 Beobachtungen, beliebteste zuerst. Die API liefert höchstens
+        # 10.000 Ergebnisse pro Abfrage, also maximal 50 Seiten.
+        while got < want and page <= 50:
             q = urllib.parse.urlencode({
                 "taxon_id": tid, "quality_grade": "research", "photos": "true", "per_page": 200, "page": page,
-                "order_by": "votes", "term_id": 1, "term_value_id": 2,  # life stage = adult (no eggs/tadpoles)
+                # Lebensstadium (term 1) = erwachsen (Wert 2)
+                "order_by": "votes", "term_id": 1, "term_value_id": 2,
             })
             obs = get_json(f"{INAT}/observations?{q}").get("results", [])
             if not obs:
@@ -287,15 +349,17 @@ def inaturalist(taxa: list[tuple[str, float]], n: int, *, min_size: int, use_cli
                     break
                 ph = (o.get("photos") or [{}])[0]
                 url, pid = ph.get("url") or "", f"inat_{ph.get('id')}"
-                # only openly licensed photos live in the open-data bucket
+                # Nur frei lizenzierte Fotos liegen im "open-data"-Speicher von iNaturalist.
                 if "inaturalist-open-data" not in url or pid in seen.ids:
                     continue
+                # Die API liefert das Mini-Vorschaubild ("square", 75 px); "medium" ist bis 500 px groß.
                 url = url.replace("/square.", "/medium.")
                 target = stage / f"{pid}{Path(urllib.parse.urlparse(url).path).suffix.lower() or '.jpg'}"
                 try:
                     if not target.exists():
                         target.write_bytes(http_get(url))
                     items.append((target, target.name))
+                    # Art, Lizenz und Urheber festhalten – für die Fairness gegenüber den Fotografen.
                     meta.append({"file": target.name, "taxon": (o.get("taxon") or {}).get("name"),
                                  "license": ph.get("license_code"), "attribution": ph.get("attribution"),
                                  "observation": o.get("uri")})
@@ -304,10 +368,11 @@ def inaturalist(taxa: list[tuple[str, float]], n: int, *, min_size: int, use_cli
                     pass
                 seen.add([pid])
             page += 1
-            time.sleep(1)  # iNaturalist asks for <= 1 request per second
+            time.sleep(1)  # iNaturalist bittet um höchstens eine Anfrage pro Sekunde
         print(f"  {got} Fotos geladen")
 
     PRETRAIN_RAW.mkdir(parents=True, exist_ok=True)
+    # Duplikate nur gegen die anderen Fotos prüfen, nicht gegen die Memes.
     ingest(items, PRETRAIN_RAW, PRETRAIN_RAW, min_size=min_size, use_clip=use_clip, source="inat", move=True)
     kept = {p.name for p in PRETRAIN_RAW.iterdir()}
     with (CACHE / "inat_metadata.jsonl").open("a") as f:
@@ -315,7 +380,7 @@ def inaturalist(taxa: list[tuple[str, float]], n: int, *, min_size: int, use_cli
 
 
 def dedupe_folder(folder: Path, trash: Path) -> None:
-    """Move near-duplicate images out of folder (keeps the largest version of each)."""
+    """Befehl "dedupe": verschiebt Duplikate aus einem Ordner nach trash und behält die größte Version."""
     images, _ = scan(folder)
     items = sorted(((p, *fp) for p in images if (fp := fingerprint(p))), key=lambda c: -c[2])
     kept, moved = [], 0
@@ -330,7 +395,8 @@ def dedupe_folder(folder: Path, trash: Path) -> None:
 
 
 def gallery_dl(url: str, dest: Path, limit: int | None) -> None:
-    # prefer the gallery-dl that sits next to this Python (works even if the venv isn't activated)
+    """Quelle "url": überlässt das Herunterladen dem Programm gallery-dl (kennt viele Bilderseiten)."""
+    # Bevorzugt das gallery-dl aus derselben venv – klappt auch, wenn die venv nicht aktiviert ist.
     local = Path(sys.executable).parent / "gallery-dl"
     exe = str(local) if local.exists() else shutil.which("gallery-dl")
     if not exe:
@@ -344,12 +410,13 @@ def gallery_dl(url: str, dest: Path, limit: int | None) -> None:
     subprocess.run(cmd, check=False)
 
 
-# ----------------------------------------------------------------------------- CLI
+# ----------------------------------------------------------------------------- Kommandozeile
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    # Optionen, die mehrere Unterbefehle teilen.
     def common(sp, min_size=DEFAULT_MIN_SIZE):
         sp.add_argument("--min-size", type=int, default=min_size, help="drop images whose shorter side is smaller")
         sp.add_argument("--clip", action="store_true", help="drop images without a frog (CLIP, pip install -e '.[clip]')")
@@ -380,6 +447,7 @@ def main():
     if a.cmd == "archive":
         reddit_archive(a.subreddit, limit=a.limit, min_size=a.min_size, use_clip=a.clip)
     elif a.cmd == "inat":
+        # Eigene Taxa werden gleichmäßig aufgeteilt, sonst gilt die Standardmischung von oben.
         taxa = [(t, 1 / len(a.taxon)) for t in a.taxon] if a.taxon else INAT_DEFAULT
         inaturalist(taxa, a.n, min_size=a.min_size, use_clip=a.clip)
     elif a.cmd == "import":

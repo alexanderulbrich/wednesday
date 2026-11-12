@@ -51,7 +51,8 @@ In `runs/overfit/samples/` sollten nach ein paar hundert Schritten Formen zu seh
 3. Das Notebook trainiert in zwei Stufen, jeweils in 64 px aus den schärferen 128er Bildern:
    - **Pretrain** auf Froschfotos + Memes (40k Schritte)
    - **Fine-Tune** nur auf die Memes (`train.py --init …`, 10k Schritte, kleinere Lernrate)
-4. `frog.pt` aus `ft/` herunterladen.
+4. Ein Fortschrittsbalken zeigt Schritt, Loss und Restzeit; zusätzlich steht alle 100 Schritte eine Protokollzeile mit `noch ~…` im Log.
+5. `frog.pt` aus `ft/` herunterladen.
 
 ## 5. Knopf drücken
 ```bash
@@ -63,6 +64,8 @@ python app.py --ckpt frog.pt                       # Web-UI mit Button
 ```
 
 ## Wie es funktioniert
+Der Code ist zum Lesen gedacht: Jede Datei ist ein Kapitel mit ausführlichen deutschen Kommentaren. Das Inhaltsverzeichnis steht in `wednesday/__init__.py`. Wer nur das Prinzip verstehen will, liest Kapitel 4 (`wednesday/flow.py`), 5 (`wednesday/model.py`) und 7 (`train.py`).
+
 - **Training:** Rauschen `x0` und Bild `x1` werden linear gemischt, `x_t = (1-t)·x0 + t·x1`. Das UNet lernt die Geschwindigkeit `v = x1 - x0` (MSE-Loss). `t` wird logit-normal gezogen, wie bei SD3.
 - **Sampling:** Die ODE `dx/dt = v(x, t)` wird mit Heun oder Euler von reinem Rauschen (t=0) bis zum Bild (t=1) integriert.
 - Code: `wednesday/flow.py` (Loss + Sampler), `wednesday/model.py` (UNet), `train.py`, `generate.py`.
