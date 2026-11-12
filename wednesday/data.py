@@ -41,13 +41,37 @@ class FrogDataset(Dataset):
     res:     Zielgröße in Pixeln (Standard 64).
     augment: zufällige Variationen an/aus.
     limit:   nur die ersten N Bilder nehmen (für schnelle Tests).
+    split:   "all" = alle Bilder, "train" = ohne die Validierungsbilder, "val" = nur die Validierungsbilder.
+    val_frac: Anteil der Bilder, die fürs Validieren zurückgehalten werden (0,05 = jedes 20. Bild).
+
+    Validierungsbilder sieht das Netz beim Lernen nie. Misst man den Loss auf ihnen, merkt man, ob es
+    allgemein Frösche gelernt hat oder nur die Trainingsbilder auswendig kann (siehe train.py).
+    Die Auswahl ist fest: In jedem Ordner ist jedes 20. Bild (nach Dateiname sortiert) ein
+    Validierungsbild – bei jedem Lauf, beim Weitermachen und im Fine-Tune dieselben.
     """
 
-    def __init__(self, folder: str | Path | list, res: int = 64, augment: bool = True, limit: int | None = None):
+    def __init__(self, folder: str | Path | list, res: int = 64, augment: bool = True, limit: int | None = None,
+                 split: str = "all", val_frac: float = 0.05):
         folders = folder if isinstance(folder, (list, tuple)) else str(folder).split(",")
-        paths = [p for f in folders for p in list_images(f.strip() if isinstance(f, str) else f)]
+        every = round(1 / val_frac) if val_frac > 0 else 0  # 0,05 -> jedes 20. Bild
+        paths: list[Path] = []
+        # Zu jedem Bild merken wir uns seine "Gruppe" = Name des Datensatz-Ordners (bei .../frog-photos/128
+        # also "frog-photos"). So lässt sich der Loss getrennt für Fotos und Memes verfolgen.
+        self.groups: list[str] = []
+        folders = [Path(f.strip() if isinstance(f, str) else f) for f in folders]
+        # Ordner wie "128" sagen nichts aus -> den Namen darüber nehmen. Heißen zwei Datensätze gleich
+        # (z.B. lokal beide "processed"), stattdessen den ganzen Pfad, damit sie unterscheidbar bleiben.
+        names = [(f.parent if f.name.isdigit() else f).name for f in folders]
+        if len(set(names)) < len(names):
+            names = [str(f.parent if f.name.isdigit() else f) for f in folders]
+        for f, group in zip(folders, names):
+            for i, p in enumerate(list_images(f)):
+                is_val = bool(every) and i % every == 0
+                if split == "all" or (split == "val") == is_val:
+                    paths.append(p)
+                    self.groups.append(group)
         if limit:
-            paths = paths[:limit]
+            paths, self.groups = paths[:limit], self.groups[:limit]
         if not paths:
             raise FileNotFoundError(f"No images found in {folder}")
         # Alle Bilder vorab laden: ein paar tausend 73×73-Bilder sind nur wenige MB, und so muss

@@ -52,6 +52,7 @@ In `runs/overfit/samples/` sollten nach ein paar hundert Schritten Formen zu seh
    - **Pretrain** auf Froschfotos + Memes (40k Schritte)
    - **Fine-Tune** nur auf die Memes (`train.py --init …`, 10k Schritte, kleinere Lernrate)
 4. Ein Fortschrittsbalken zeigt Schritt, Loss und Restzeit; zusätzlich steht alle 100 Schritte eine Protokollzeile mit `noch ~…` im Log.
+   5 % der Bilder werden zurückgehalten. Alle 1000 Schritte zeichnet `train.py` nach `pre/loss.png` bzw. `ft/loss.png`: links den Trainings-Loss, rechts Trainings- gegen Validierungsbilder (Zahlen in `metrics.csv`). Wächst rechts der Abstand zwischen „train (fest)“ und „val“, lernt das Modell die Trainingsbilder auswendig. Erklärung in `wednesday/monitor.py`.
 5. `frog.pt` aus `ft/` herunterladen.
 
 ## 5. Knopf drücken

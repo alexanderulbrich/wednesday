@@ -74,6 +74,32 @@ def flow_matching_loss(model: nn.Module, x1: torch.Tensor, t_mode: str = "logit_
     return F.mse_loss(v_pred.float(), v_target.float())
 
 
+@torch.no_grad()
+def validation_loss(model: nn.Module, x1: torch.Tensor, n_t: int = 8, seed: int = 0, batch: int = 64) -> torch.Tensor:
+    """Loss pro Bild, aber mit festem Rauschen und festen Zeitpunkten – zum Vergleichen über die Zeit.
+
+    Der Trainings-Loss oben würfelt Rauschen und t jedes Mal neu und springt deshalb stark. Um zu sehen,
+    ob das Netz besser wird, braucht man eine Messung, die immer exakt gleich abläuft: Jedes Bild wird
+    bei n_t festen, gleichmäßig verteilten Zeitpunkten (bei n_t = 8: 1/16, 3/16, ..., 15/16) mit immer
+    demselben Rauschen (fester Seed) geprüft. Gleiche Gewichte -> exakt gleicher Wert.
+
+    x1: Bilder (N, 3, H, W) auf der CPU. Rückgabe: mittlerer Fehler pro Bild, Form (N,), auf der CPU.
+    """
+    device = next(model.parameters()).device
+    g = torch.Generator().manual_seed(seed)
+    losses = torch.zeros(len(x1))
+    for k in range(n_t):
+        t = (k + 0.5) / n_t
+        x0 = torch.randn(x1.shape, generator=g)  # festes Rauschen, auf der CPU gewürfelt (siehe sample)
+        for i in range(0, len(x1), batch):
+            xb, x0b = x1[i:i + batch].to(device), x0[i:i + batch].to(device)
+            xt = (1 - t) * x0b + t * xb
+            v_pred = model(xt, torch.full((len(xb),), t, device=device))
+            # Mittlere quadratische Abweichung pro Bild (über Kanäle und Pixel gemittelt).
+            losses[i:i + batch] += (v_pred.float() - (xb - x0b).float()).pow(2).mean(dim=(1, 2, 3)).cpu()
+    return losses / n_t
+
+
 @torch.no_grad()  # Beim Generieren wird nichts gelernt -> keine Gradienten nötig, spart Speicher und Zeit.
 def sample(
     model: nn.Module,

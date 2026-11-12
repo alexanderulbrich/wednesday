@@ -9,6 +9,7 @@ dependencies = [
     "pillow>=10",
     "numpy",
     "tqdm",
+    "matplotlib",
 ]
 
 [project.optional-dependencies]

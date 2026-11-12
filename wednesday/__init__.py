@@ -17,6 +17,7 @@ Erklärung, worum es in ihr geht; die Kommentare im Code erzählen die Details.
     Anhang A   wednesday/formats.py    Welche Dateien sind Bilder, welche sind Website-Müll?
     Anhang B   wednesday/clipfilter.py Ein fertiges Bildmodell (CLIP) prüft: Ist da ein Frosch drauf?
     Anhang C   app.py                  Eine kleine Web-Oberfläche mit einem Knopf
+    Anhang D   wednesday/monitor.py    Das Training überwachen: Loss-Tabelle und Loss-Kurven (Overfitting erkennen)
 
 Wer nur verstehen will, wie generative Modelle funktionieren, liest Kapitel 4, 5 und 7.
 

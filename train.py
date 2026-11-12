@@ -15,7 +15,10 @@ Das wiederholen wir zehntausende Male. Zwischendurch speichern wir Beispielbilde
 demselben Rauschen, damit man sieht, wie sich dieselben Frösche entwickeln) und Zwischenstände
 (Checkpoints), damit ein abgebrochenes Training weiterlaufen kann.
 
-Ein Fortschrittsbalken zeigt Schritt, Tempo, Loss und die geschätzte Restzeit.
+Ein Fortschrittsbalken zeigt Schritt, Tempo, Loss und die geschätzte Restzeit. Außerdem werden 5 % der
+Bilder zurückgehalten ("Validierung"): Auf ihnen wird regelmäßig gemessen, ob das Netz allgemein Frösche
+lernt oder nur die Trainingsbilder auswendig. Alle Messwerte landen in <out>/metrics.csv und als Kurven
+in <out>/loss.png (wie man sie liest, steht in wednesday/monitor.py).
 
 Beispiele:
     # Kurzer Test auf dem Mac (~10 min)
@@ -46,8 +49,9 @@ from tqdm import tqdm
 from wednesday import get_device
 from wednesday.data import FrogDataset, make_grid, to_pil
 from wednesday.ema import EMA
-from wednesday.flow import flow_matching_loss, sample
+from wednesday.flow import flow_matching_loss, sample, validation_loss
 from wednesday.model import UNet
+from wednesday.monitor import MetricsLog, plot_metrics
 
 
 def parse_args():
@@ -74,6 +78,9 @@ def parse_args():
     p.add_argument("--sample-every", type=int, default=2000)
     p.add_argument("--save-every", type=int, default=5000)
     p.add_argument("--sample-steps", type=int, default=30)
+    # Validierung: Anteil zurückgehaltener Bilder (0 = aus) und wie oft gemessen wird
+    p.add_argument("--val-frac", type=float, default=0.05)
+    p.add_argument("--val-every", type=int, default=1000)
     # Weitermachen bzw. von einem anderen Modell aus starten
     p.add_argument("--resume", default=None)
     p.add_argument("--init", default=None, help="start from these weights (fine-tune): fresh optimizer, schedule, step")
@@ -127,8 +134,22 @@ def main():
               f"amp={str(amp_dtype).replace('torch.', '') if amp_dtype else 'off (fp32)'}")
 
     # ---------------------------------------------------------------- Daten (Kapitel 3)
-    ds = FrogDataset(args.data, res=args.res, augment=not args.no_augment, limit=args.limit)
+    # Trainiert wird nur auf dem "train"-Teil; jedes 20. Bild bleibt für die Validierung zurück.
+    ds = FrogDataset(args.data, res=args.res, augment=not args.no_augment, limit=args.limit,
+                     split="train" if args.val_frac > 0 else "all", val_frac=args.val_frac)
     print(f"dataset: {len(ds)} images")
+    # Für den festen Vergleichstest (monitor.py): die Validierungsbilder und gleich viele Trainingsbilder,
+    # beide ohne zufällige Variationen und einmal als fertiger Stapel im Speicher.
+    val_x = trainfix_x = None
+    if args.val_frac > 0:
+        val_ds = FrogDataset(args.data, res=args.res, augment=False, split="val", val_frac=args.val_frac)
+        val_x, val_groups = torch.stack([val_ds[i] for i in range(len(val_ds))]), val_ds.groups
+        fix_ds = FrogDataset(args.data, res=args.res, augment=False, limit=args.limit, split="train",
+                             val_frac=args.val_frac)
+        pick = torch.linspace(0, len(fix_ds) - 1, min(len(val_ds), len(fix_ds))).long().tolist()  # gleichmäßig verteilt
+        trainfix_x = torch.stack([fix_ds[i] for i in pick])
+        del fix_ds
+        print(f"validation: {len(val_ds)} images ({', '.join(f'{g} {val_groups.count(g)}' for g in sorted(set(val_groups)))})")
     # Der DataLoader mischt die Bilder, packt sie zu Batches und bereitet sie in Hintergrundprozessen
     # ("workers") vor, während die Grafikkarte rechnet. drop_last: unvollständigen letzten Batch weglassen.
     loader = DataLoader(ds, batch_size=min(args.batch, len(ds)), shuffle=True, drop_last=True,
@@ -214,6 +235,25 @@ def main():
 
     (out / "args.json").write_text(json.dumps(vars(args), indent=2))  # Einstellungen zum Nachschauen
 
+    # ---------------------------------------------------------------- Überwachung (Anhang D)
+    groups = sorted(set(val_groups)) if val_x is not None else []
+    metrics = MetricsLog(out / "metrics.csv", ["step", "train_loss", "lr", "it_s", "trainfix_loss", "val_loss",
+                                               "val_raw"] + [f"val_{g}" for g in groups])
+
+    def evaluate() -> dict:
+        """Der feste Vergleichstest: Loss auf Trainings- und Validierungsbildern, exakt gleich gemessen."""
+        with torch.autocast(device.type, dtype=amp_dtype, enabled=use_amp):
+            val = validation_loss(ema.model, val_x)
+            fix = validation_loss(ema.model, trainfix_x)
+            # Zusätzlich das rohe (nicht geglättete) Netz – ohne Dropout gemessen, danach zurück in den Trainingsmodus.
+            model.eval()
+            raw = validation_loss(model, val_x)
+            model.train()
+        res = {"val_loss": val.mean().item(), "trainfix_loss": fix.mean().item(), "val_raw": raw.mean().item()}
+        for g in groups:
+            res[f"val_{g}"] = val[[i for i, vg in enumerate(val_groups) if vg == g]].mean().item()
+        return res
+
     # ---------------------------------------------------------------- Die Schleife
     model.train()  # Trainingsmodus (Dropout an)
     data = infinite(loader)
@@ -249,15 +289,29 @@ def main():
 
         # Protokoll: durchschnittlicher Loss der letzten --log-every Schritte. Er sollte über die Zeit
         # fallen, springt aber von Batch zu Batch – wichtig ist der Trend.
+        row = {}
         if step % args.log_every == 0:
             dt = time.time() - t0
             rate = args.log_every / dt
             avg = running / args.log_every
+            row.update(train_loss=avg, lr=sched.get_last_lr()[0], it_s=rate)
             pbar.set_postfix(loss=f"{avg:.4f}", lr=f"{sched.get_last_lr()[0]:.1e}", refresh=False)
             # pbar.write statt print: schreibt eine dauerhafte Zeile über den Balken, ohne ihn zu zerstören.
             pbar.write(f"step {step:>7} | loss {avg:.4f} | lr {sched.get_last_lr()[0]:.2e} "
                        f"| {rate:.1f} it/s | noch ~{tqdm.format_interval((args.steps - step) / rate)}")
             t0, running = time.time(), 0.0
+        # Fester Vergleichstest auf Trainings- vs. Validierungsbildern (kostet nur wenige Sekunden).
+        validated = val_x is not None and (step % args.val_every == 0 or step == args.steps)
+        if validated:
+            v = evaluate()
+            row.update(v)
+            per_group = ", ".join(f"{g} {v[f'val_{g}']:.4f}" for g in groups) if len(groups) > 1 else ""
+            pbar.write(f"   val @ {step:>7} | train(fest) {v['trainfix_loss']:.4f} | val {v['val_loss']:.4f}"
+                       + (f" ({per_group})" if per_group else ""))
+        if row:
+            metrics.write({"step": step, **row})
+        if validated or (val_x is None and step % args.sample_every == 0) or step == args.steps:
+            plot_metrics(metrics, out / "loss.png", title=f"Lauf: {out.name}")
         if step % args.sample_every == 0 or step == args.steps:
             save_samples()
         if step % args.save_every == 0 or step == args.steps:
