@@ -63,7 +63,7 @@ Ohne echte Daten: Fake-Bilder erzeugen (beige Ellipse + 2 schwarze Augen auf zuf
 
 ## Offen / ungetestet
 Verifiziert ist nur die lokale Pipeline mit Fake-Bildern: prepare → Training → Resume → `generate.py --text`. Die Samples konvergieren nach 1200 Schritten zu sauberen Blobs. **Noch nie gelaufen** sind:
-- `notebooks/train_kaggle.ipynb` auf Kaggle/Colab (zwei Datasets `wednesday-frogs` + `frog-photos`, zwei Stufen). Es klont das öffentliche Repo `alexanderulbrich/wednesday` (Kaggle braucht dafür Internet = On). `find_dataset()` sucht den Ordner `128/` unterhalb von `/kaggle/input`, egal wie Kaggle die Zip einhängt.
+- `notebooks/train_kaggle.ipynb` auf Kaggle/Colab (zwei Datasets `wednesday-frogs` + `frog-photos`, zwei Stufen). Es klont das öffentliche Repo `alexanderulbrich/wednesday` (Kaggle braucht dafür Internet = On). `find_dataset(name)` sucht `**/<name>/128` unterhalb von `/kaggle/input`, der Ordner über `128/` muss also exakt `wednesday-frogs` bzw. `frog-photos` heißen, egal wie das Dataset heißt oder wie tief es liegt. (Der User hat beide Zips in *ein* Dataset `wednesday-frogs` geladen → `/kaggle/input/wednesday-frogs/{wednesday-frogs,frog-photos}/128`. Die frühere Teilstring-Suche hätte dabei Memes und Fotos verwechseln können.) Hochgeladene Datasets muss man im Notebook-Editor rechts unter *Input → + Add Input* erst verbinden, vorher ist `/kaggle/input` leer.
 - `scripts/collect.py url` (gallery-dl) für Nicht-Reddit-Seiten. `collect.py reddit` ist faktisch tot, siehe oben.
 - `app.py` (gradio ist nicht installiert).
 - Training mit echten Daten auf GPU, 128 px, und die Hyperparameter der zwei Stufen (40k Pretrain, 10k Fine-Tune mit lr 1e-4). `--init` ist nur lokal auf Fake-Daten getestet (Fine-Tune startet mit Loss 0,14 statt 1,1).
