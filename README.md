@@ -48,7 +48,8 @@ In `runs/overfit/samples/` sollten nach ein paar hundert Schritten Formen zu seh
 1. Beide Zips als Kaggle-Datasets hochladen: `data/wednesday-frogs.zip` als `wednesday-frogs`, `data/pretrain/frog-photos.zip`
    als `frog-photos` (bzw. beide in Google Drive legen).
 2. `notebooks/train_kaggle.ipynb` öffnen (klont das öffentliche Repo `alexanderulbrich/wednesday`), GPU und Internet an, alle Zellen ausführen.
-3. Das Notebook trainiert in zwei Stufen, jeweils in 64 px aus den schärferen 128er Bildern:
+3. **Schneller Prototyp zuerst** (eigene Zelle, ~30 min): kleineres Netz (`--base 32`) mit Zeitbudget `--minutes 25`. Danach erzeugt die nächste Zelle direkt 16 Frösche.
+   Das volle Training trainiert in zwei Stufen, jeweils in 64 px aus den schärferen 128er Bildern:
    - **Pretrain** auf Froschfotos + Memes (40k Schritte)
    - **Fine-Tune** nur auf die Memes (`train.py --init …`, 10k Schritte, kleinere Lernrate)
 4. Ein Fortschrittsbalken zeigt Schritt, Loss und Restzeit; zusätzlich steht alle 100 Schritte eine Protokollzeile mit `noch ~…` im Log.

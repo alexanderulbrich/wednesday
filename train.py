@@ -81,6 +81,8 @@ def parse_args():
     # Validierung: Anteil zurückgehaltener Bilder (0 = aus) und wie oft gemessen wird
     p.add_argument("--val-frac", type=float, default=0.05)
     p.add_argument("--val-every", type=int, default=1000)
+    # Zeitbudget: statt fester Schrittzahl so viele Schritte, wie in N Minuten passen
+    p.add_argument("--minutes", type=float, default=None, help="time budget; sets --steps after measuring the speed")
     # Weitermachen bzw. von einem anderen Modell aus starten
     p.add_argument("--resume", default=None)
     p.add_argument("--init", default=None, help="start from these weights (fine-tune): fresh optimizer, schedule, step")
@@ -264,6 +266,12 @@ def main():
     pbar = tqdm(total=args.steps, initial=step, unit="step", dynamic_ncols=True, smoothing=0.05,
                 mininterval=1 if interactive else 30, desc="train")
     t0, running = time.time(), 0.0
+    # Zeitbudget (--minutes): Wie viele Schritte in die Zeit passen, hängt von Grafikkarte und Netzgröße
+    # ab. Deshalb messen wir das Tempo zwischen Schritt 20 und 120 (davor ist es durch das cuDNN-
+    # Autotuning verfälscht) und legen dann die Gesamtzahl fest. Der Lernraten-Fahrplan liest args.steps
+    # bei jedem Schritt neu und passt seinen Kosinus-Abfall damit automatisch an das neue Ende an.
+    t_start, step0, t_cal = time.time(), step, None
+    calibrate = bool(args.minutes) and args.steps > step0 + 120
     while step < args.steps:
         # 1. Batch holen und auf den Rechenchip schieben.
         x1 = next(data).to(device, non_blocking=True)
@@ -286,6 +294,18 @@ def main():
         step += 1
         running += loss.item()
         pbar.update(1)
+        if calibrate and step == step0 + 20:
+            t_cal = time.time()
+        elif calibrate and step == step0 + 120:
+            rate = 100 / (time.time() - t_cal)
+            left = args.minutes * 60 - (time.time() - t_start)
+            # 10 % Puffer für Beispielbilder, Validierung, Speichern und den Abschluss.
+            args.steps = max(step + 1, int(step + rate * left * 0.9))
+            pbar.total = args.steps
+            pbar.refresh()
+            pbar.write(f"Zeitbudget {args.minutes:g} min: {rate:.1f} it/s gemessen -> {args.steps} Schritte")
+            (out / "args.json").write_text(json.dumps(vars(args), indent=2))
+            calibrate = False
 
         # Protokoll: durchschnittlicher Loss der letzten --log-every Schritte. Er sollte über die Zeit
         # fallen, springt aber von Batch zu Batch – wichtig ist der Trend.
