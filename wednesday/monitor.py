@@ -62,13 +62,15 @@ def _fmt(v) -> str:
     return f"{v:.6g}" if isinstance(v, float) else str(v)
 
 
-def _smooth(values: list[float], alpha: float = 0.1) -> list[float]:
-    """Exponentielle Glättung (wie EMA in Kapitel 6, nur für Kurven): jeder Punkt = 90 % alt + 10 % neu."""
-    out, s = [], None
-    for v in values:
-        s = v if s is None else (1 - alpha) * s + alpha * v
-        out.append(s)
-    return out
+def _smooth(values: list[float], frac: float = 0.05) -> list[float]:
+    """Zentrierter gleitender Mittelwert: jeder Punkt = Mittel seiner Nachbarn links und rechts.
+
+    Fenster ≈ 5 % aller Punkte (mindestens 1 Nachbar je Seite). Anders als eine nachlaufende Glättung
+    (wie die EMA in Kapitel 6) hinkt die Kurve so nicht hinterher – wichtig am Anfang, wo der Loss in
+    wenigen hundert Schritten von ~1 auf ~0,2 fällt. An den Rändern wird das Fenster einfach kleiner.
+    """
+    k = max(1, int(len(values) * frac / 2))
+    return [sum(values[max(0, i - k):i + k + 1]) / len(values[max(0, i - k):i + k + 1]) for i in range(len(values))]
 
 
 def plot_metrics(log: MetricsLog, png: Path, title: str = "") -> None:

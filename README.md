@@ -49,6 +49,7 @@ In `runs/overfit/samples/` sollten nach ein paar hundert Schritten Formen zu seh
    als `frog-photos` (bzw. beide in Google Drive legen).
 2. `notebooks/train_kaggle.ipynb` öffnen (klont das öffentliche Repo `alexanderulbrich/wednesday`), GPU und Internet an, alle Zellen ausführen.
 3. **Schneller Prototyp zuerst** (eigene Zelle, ~30 min): kleineres Netz (`--base 32`) mit Zeitbudget `--minutes 25`. Danach erzeugt die nächste Zelle direkt 16 Frösche.
+   **Großer Lauf im Hintergrund:** `notebooks/big_run_kaggle.ipynb` importieren, Parameter oben anpassen, *Save Version → Save & Run All (Commit)*. Der Tab darf zu sein; die Ergebnisse stehen danach im Output der Version.
    Das volle Training trainiert in zwei Stufen, jeweils in 64 px aus den schärferen 128er Bildern:
    - **Pretrain** auf Froschfotos + Memes (40k Schritte)
    - **Fine-Tune** nur auf die Memes (`train.py --init …`, 10k Schritte, kleinere Lernrate)

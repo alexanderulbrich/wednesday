@@ -47,7 +47,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from wednesday import get_device
-from wednesday.data import FrogDataset, make_grid, to_pil
+from wednesday.data import FrogDataset, GPUBatcher, make_grid, to_pil
 from wednesday.ema import EMA
 from wednesday.flow import flow_matching_loss, sample, validation_loss
 from wednesday.model import UNet
@@ -83,6 +83,10 @@ def parse_args():
     p.add_argument("--val-every", type=int, default=1000)
     # Zeitbudget: statt fester Schrittzahl so viele Schritte, wie in N Minuten passen
     p.add_argument("--minutes", type=float, default=None, help="time budget; sets --steps after measuring the speed")
+    # Wo die zufälligen Bildvariationen gerechnet werden: CPU (DataLoader) oder Grafikkarte (GPUBatcher)
+    p.add_argument("--loader", default="auto", choices=["auto", "cpu", "gpu"], help="auto: gpu on CUDA, else cpu")
+    # Den Stand mit dem niedrigsten Validation Loss einer Gruppe (z.B. wednesday-frogs) oder gesamt ("val") sichern
+    p.add_argument("--keep-best", default=None, help="save best.pt/best_frog.pt at the lowest val loss of this group")
     # Weitermachen bzw. von einem anderen Modell aus starten
     p.add_argument("--resume", default=None)
     p.add_argument("--init", default=None, help="start from these weights (fine-tune): fresh optimizer, schedule, step")
@@ -152,11 +156,21 @@ def main():
         trainfix_x = torch.stack([fix_ds[i] for i in pick])
         del fix_ds
         print(f"validation: {len(val_ds)} images ({', '.join(f'{g} {val_groups.count(g)}' for g in sorted(set(val_groups)))})")
-    # Der DataLoader mischt die Bilder, packt sie zu Batches und bereitet sie in Hintergrundprozessen
-    # ("workers") vor, während die Grafikkarte rechnet. drop_last: unvollständigen letzten Batch weglassen.
-    loader = DataLoader(ds, batch_size=min(args.batch, len(ds)), shuffle=True, drop_last=True,
-                        num_workers=args.workers, persistent_workers=args.workers > 0,
-                        pin_memory=device.type == "cuda")
+    # Zwei Wege, die Batches zu bauen:
+    # - "cpu": Der DataLoader mischt die Bilder, packt sie zu Batches und bereitet sie in Hintergrund-
+    #   prozessen ("workers") vor, während die Grafikkarte rechnet. drop_last: unvollständigen letzten
+    #   Batch weglassen.
+    # - "gpu": GPUBatcher (Kapitel 3) rechnet die Variationen direkt auf der Grafikkarte – schneller,
+    #   wenn die CPU nicht hinterherkommt. Standard auf NVIDIA-Karten.
+    use_gpu_loader = args.loader == "gpu" or (args.loader == "auto" and device.type == "cuda")
+    batch = min(args.batch, len(ds))
+    if use_gpu_loader:
+        loader = GPUBatcher(ds, batch, args.res, device)
+    else:
+        loader = DataLoader(ds, batch_size=batch, shuffle=True, drop_last=True,
+                            num_workers=args.workers, persistent_workers=args.workers > 0,
+                            pin_memory=device.type == "cuda")
+    print(f"loader: {'gpu' if use_gpu_loader else f'cpu ({args.workers} workers)'}")
 
     # ---------------------------------------------------------------- Netz (Kapitel 5)
     # Fine-Tuning (--init): Bauanleitung und Gewichte kommen aus einem vorhandenen Checkpoint,
@@ -207,6 +221,7 @@ def main():
     # Liegt im Ausgabeordner schon ein last.pt, geht es dort weiter – mit allem: Gewichte, Doppelgänger,
     # Optimizer-Zustand, Lernraten-Fahrplan und Schrittzähler.
     step = 0
+    best = float("inf")  # bester bisheriger Validation Loss (für --keep-best)
     resume = args.resume or (out / "last.pt" if (out / "last.pt").exists() else None)
     if resume:
         ckpt = torch.load(resume, map_location="cpu", weights_only=False)
@@ -217,6 +232,7 @@ def main():
         if "scaler" in ckpt:
             scaler.load_state_dict(ckpt["scaler"])
         step = ckpt["step"]
+        best = ckpt.get("best", best)
         print(f"resumed from {resume} @ step {step}")
 
     def save(path: Path):
@@ -224,7 +240,7 @@ def main():
         torch.save({
             "model": model.state_dict(), "ema": ema.state_dict(), "opt": opt.state_dict(),
             "sched": sched.state_dict(), "scaler": scaler.state_dict(), "step": step,
-            "model_config": model.config, "args": vars(args),
+            "model_config": model.config, "args": vars(args), "best": best,
         }, path)
 
     def save_samples():
@@ -258,14 +274,14 @@ def main():
 
     # ---------------------------------------------------------------- Die Schleife
     model.train()  # Trainingsmodus (Dropout an)
-    data = infinite(loader)
+    data = loader if use_gpu_loader else infinite(loader)
     # Fortschrittsbalken. initial=step: Nach einem Weitermachen startet er beim richtigen Schritt.
     # Im Terminal wird er jede Sekunde aktualisiert; ohne Terminal (z.B. Kaggle-Log) nur alle 30 s,
     # damit das Log nicht mit Tausenden Zeilen vollläuft.
     interactive = sys.stderr.isatty()
     pbar = tqdm(total=args.steps, initial=step, unit="step", dynamic_ncols=True, smoothing=0.05,
                 mininterval=1 if interactive else 30, desc="train")
-    t0, running = time.time(), 0.0
+    t0, running, t_data = time.time(), 0.0, 0.0
     # Zeitbudget (--minutes): Wie viele Schritte in die Zeit passen, hängt von Grafikkarte und Netzgröße
     # ab. Deshalb messen wir das Tempo zwischen Schritt 20 und 120 (davor ist es durch das cuDNN-
     # Autotuning verfälscht) und legen dann die Gesamtzahl fest. Der Lernraten-Fahrplan liest args.steps
@@ -274,7 +290,11 @@ def main():
     calibrate = bool(args.minutes) and args.steps > step0 + 120
     while step < args.steps:
         # 1. Batch holen und auf den Rechenchip schieben.
+        # Wie lange auf die Daten gewartet wird, messen wir mit: Ist der Anteil groß, bremst die
+        # Datenvorbereitung und nicht die Grafikkarte (Protokollzeile "daten xx %").
+        t_wait = time.time()
         x1 = next(data).to(device, non_blocking=True)
+        t_data += time.time() - t_wait
         # 2. Loss berechnen (Kapitel 4), auf der Grafikkarte im schnellen 16-Bit-Modus.
         with torch.autocast(device.type, dtype=amp_dtype, enabled=use_amp):
             loss = flow_matching_loss(model, x1, args.t_mode)
@@ -318,8 +338,9 @@ def main():
             pbar.set_postfix(loss=f"{avg:.4f}", lr=f"{sched.get_last_lr()[0]:.1e}", refresh=False)
             # pbar.write statt print: schreibt eine dauerhafte Zeile über den Balken, ohne ihn zu zerstören.
             pbar.write(f"step {step:>7} | loss {avg:.4f} | lr {sched.get_last_lr()[0]:.2e} "
-                       f"| {rate:.1f} it/s | noch ~{tqdm.format_interval((args.steps - step) / rate)}")
-            t0, running = time.time(), 0.0
+                       f"| {rate:.1f} it/s | daten {100 * t_data / dt:.0f} % "
+                       f"| noch ~{tqdm.format_interval((args.steps - step) / rate)}")
+            t0, running, t_data = time.time(), 0.0, 0.0
         # Fester Vergleichstest auf Trainings- vs. Validierungsbildern (kostet nur wenige Sekunden).
         validated = val_x is not None and (step % args.val_every == 0 or step == args.steps)
         if validated:
@@ -328,6 +349,19 @@ def main():
             per_group = ", ".join(f"{g} {v[f'val_{g}']:.4f}" for g in groups) if len(groups) > 1 else ""
             pbar.write(f"   val @ {step:>7} | train(fest) {v['trainfix_loss']:.4f} | val {v['val_loss']:.4f}"
                        + (f" ({per_group})" if per_group else ""))
+            # --keep-best: Ist der Validation Loss der gewählten Gruppe so niedrig wie nie zuvor, diesen
+            # Stand sichern. Beim Fine-Tune auf wenige Memes kippt das Netz irgendwann ins Auswendig-
+            # lernen (val steigt wieder) – dann hat man den Stand davor.
+            if args.keep_best:
+                key = "val_loss" if args.keep_best == "val" else f"val_{args.keep_best}"
+                if key not in v:
+                    raise SystemExit(f"--keep-best {args.keep_best}: unbekannte Gruppe, möglich: val, {', '.join(groups)}")
+                if v[key] < best:
+                    best = v[key]
+                    save(out / "best.pt")
+                    torch.save({"ema": ema.state_dict(), "model_config": model.config, "step": step},
+                               out / "best_frog.pt")
+                    pbar.write(f"   neuer Bestwert {args.keep_best} {best:.4f} -> best_frog.pt")
         if row:
             metrics.write({"step": step, **row})
         if validated or (val_x is None and step % args.sample_every == 0) or step == args.steps:

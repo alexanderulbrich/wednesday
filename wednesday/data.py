@@ -18,6 +18,7 @@ Zwei Dinge sind dabei wichtig:
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import torch
@@ -105,6 +106,71 @@ class FrogDataset(Dataset):
     def __getitem__(self, i: int) -> torch.Tensor:
         # Jeder Abruf würfelt neu -> dasselbe Bild sieht in jeder Epoche etwas anders aus.
         return self.transform(self.images[i])
+
+
+class GPUBatcher:
+    """Dasselbe wie FrogDataset + DataLoader, aber die zufälligen Variationen rechnet die Grafikkarte.
+
+    Warum? Beim Prototyp auf Kaggle war das kleine Netz kaum schneller als das große – ein Zeichen,
+    dass nicht die Grafikkarte bremst, sondern die CPU, die für jeden Schritt 64 Bilder einzeln
+    zuschneidet, spiegelt und umfärbt. Die Grafikkarte kann das für den ganzen Batch auf einmal.
+
+    Alle Bilder liegen dafür einmal als Bytes (0..255) im Grafikspeicher: 3000 Bilder à 3 × 73 × 73 sind
+    nur ~50 MB. Pro Schritt werden 64 davon gezogen und gemeinsam variiert:
+    - Ausschnitt + Spiegeln in einem Rutsch über eine "affine Abbildung" (pro Bild: wie stark zoomen,
+      wohin verschieben, ob spiegeln) und grid_sample, das die Pixel an den neuen Positionen abliest,
+    - Helligkeit, Kontrast und Sättigung leicht verändern (bei der Hälfte der Bilder). Den Farbton
+      lassen wir hier weg – er war in der CPU-Version ohnehin nur minimal (±2 %).
+    """
+
+    def __init__(self, ds: FrogDataset, batch: int, res: int, device: torch.device):
+        import numpy as np
+
+        self.batch, self.out_res, self.device = batch, res, device
+        # (N, H, W, 3) Bytes -> (N, 3, H, W) auf die Grafikkarte
+        arr = np.stack([np.asarray(im) for im in ds.images])
+        self.images = torch.from_numpy(arr).permute(0, 3, 1, 2).contiguous().to(device)
+        self.order, self.pos = torch.randperm(len(self.images)), 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> torch.Tensor:
+        import torch.nn.functional as F
+
+        # Bilder in zufälliger Reihenfolge ziehen; ist die Liste durch, neu mischen (= neue Epoche).
+        if self.pos + self.batch > len(self.order):
+            self.order, self.pos = torch.randperm(len(self.images)), 0
+        idx = self.order[self.pos:self.pos + self.batch].to(self.device)
+        self.pos += self.batch
+        x = self.images[idx].float() / 255  # (B, 3, H, W) in 0..1
+        b, dev = x.shape[0], x.device
+
+        # --- Zufälliger Ausschnitt (75–100 % der Fläche, Seitenverhältnis 0,9–1,1) + Spiegeln
+        area = torch.empty(b, device=dev).uniform_(0.75, 1.0)
+        ratio = torch.exp(torch.empty(b, device=dev).uniform_(math.log(0.9), math.log(1.1)))
+        w = torch.sqrt(area * ratio).clamp(max=1.0)  # Breite des Ausschnitts (1 = ganzes Bild)
+        h = torch.sqrt(area / ratio).clamp(max=1.0)
+        cx = (torch.rand(b, device=dev) * 2 - 1) * (1 - w)  # Mittelpunkt, so dass er im Bild bleibt
+        cy = (torch.rand(b, device=dev) * 2 - 1) * (1 - h)
+        flip = torch.where(torch.rand(b, device=dev) < 0.5, -1.0, 1.0)
+        # Die affine Matrix bildet die Koordinaten des Ausgabebildes (-1..1) auf das Eingabebild ab.
+        theta = torch.zeros(b, 2, 3, device=dev)
+        theta[:, 0, 0], theta[:, 0, 2] = w * flip, cx
+        theta[:, 1, 1], theta[:, 1, 2] = h, cy
+        grid = F.affine_grid(theta, (b, 3, self.out_res, self.out_res), align_corners=False)
+        x = F.grid_sample(x, grid, mode="bilinear", padding_mode="reflection", align_corners=False)
+
+        # --- Farben leicht verändern, bei etwa der Hälfte der Bilder
+        jitter = (torch.rand(b, 1, 1, 1, device=dev) < 0.5).float()
+        def factor():  # zufälliger Faktor 0,9..1,1 pro Bild, bei den anderen 1,0
+            return 1 + jitter * torch.empty(b, 1, 1, 1, device=dev).uniform_(-0.1, 0.1)
+        gray = (x * torch.tensor([0.299, 0.587, 0.114], device=dev).view(1, 3, 1, 1)).sum(1, keepdim=True)
+        x = x * factor()                                                        # Helligkeit
+        x = (x - gray.mean((2, 3), keepdim=True)) * factor() + gray.mean((2, 3), keepdim=True)  # Kontrast
+        gray = (x * torch.tensor([0.299, 0.587, 0.114], device=dev).view(1, 3, 1, 1)).sum(1, keepdim=True)
+        x = gray + (x - gray) * factor()                                        # Sättigung
+        return x.clamp(0, 1) * 2 - 1  # wie in FrogDataset: Werte in [-1, 1]
 
 
 def to_pil(x: torch.Tensor) -> list[Image.Image]:
