@@ -57,6 +57,16 @@ In `runs/overfit/samples/` sollten nach ein paar hundert Schritten Formen zu seh
    5 % der Bilder werden zurückgehalten. Alle 1000 Schritte zeichnet `train.py` nach `pre/loss.png` bzw. `ft/loss.png`: links den Trainings-Loss, rechts Trainings- gegen Validierungsbilder (Zahlen in `metrics.csv`). Wächst rechts der Abstand zwischen „train (fest)“ und „val“, lernt das Modell die Trainingsbilder auswendig. Erklärung in `wednesday/monitor.py`.
 5. `frog.pt` aus `ft/` herunterladen.
 
+## Modelle verwalten
+Trainierte Modelle (`frog.pt`, `best_frog.pt` aus Kaggle) lokal in den Ordner `models/` legen, Namensschema
+`JJJJ-MM-TT_<name>_<stufe>.pt`, z.B. `2026-11-13_big-b64_ft-best.pt`. Jede neue Modelldatei trägt einen Steckbrief
+(Datum, Code-Stand, Daten, Einstellungen, Validation Loss):
+```bash
+python -m wednesday.info models/*.pt        # Steckbriefe + Vergleichstabelle
+python -m wednesday.info --registry         # Übersicht nach models/README.md schreiben
+python generate.py --ckpt latest            # jüngstes Modell aus models/ benutzen
+```
+
 ## 5. Knopf drücken
 ```bash
 python generate.py --ckpt frog.pt                  # ein Frosch, öffnet sich direkt

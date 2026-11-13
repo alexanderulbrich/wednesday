@@ -12,8 +12,9 @@ data/
 fake/
 fake_*/
 
-# Trainingsläufe, Checkpoints, generierte Bilder
+# Trainingsläufe, Checkpoints, generierte Bilder, lokale Modellsammlung
 runs/
+models/
 outputs/
 *.pt
 *.pth

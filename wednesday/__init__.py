@@ -18,6 +18,7 @@ Erklärung, worum es in ihr geht; die Kommentare im Code erzählen die Details.
     Anhang B   wednesday/clipfilter.py Ein fertiges Bildmodell (CLIP) prüft: Ist da ein Frosch drauf?
     Anhang C   app.py                  Eine kleine Web-Oberfläche mit einem Knopf
     Anhang D   wednesday/monitor.py    Das Training überwachen: Loss-Tabelle und Loss-Kurven (Overfitting erkennen)
+    Anhang E   wednesday/info.py       Modelle verwalten: Steckbrief jeder .pt-Datei, Ordner models/
 
 Wer nur verstehen will, wie generative Modelle funktionieren, liest Kapitel 4, 5 und 7.
 
@@ -61,6 +62,11 @@ def load_model(ckpt_path: str, device: torch.device | str = "cpu", use_ema: bool
 
     from .model import UNet
 
+    if str(ckpt_path) == "latest":  # "latest" = neueste Datei in models/ (Anhang E)
+        from .info import latest
+
+        ckpt_path = latest()
+        print(f"Modell: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     model = UNet(**ckpt["model_config"])  # leeres Netz nach Bauanleitung ...
     key = "ema" if use_ema and "ema" in ckpt else "model"

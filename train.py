@@ -36,10 +36,13 @@ Nach einem Abbruch (z.B. Kaggle-Zeitlimit) einfach denselben Befehl nochmal star
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import math
+import subprocess
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 import torch
@@ -115,6 +118,15 @@ def pick_amp(device: torch.device, mode: str = "auto") -> torch.dtype | None:
         return torch.float16
     major, _ = torch.cuda.get_device_capability(device)
     return torch.bfloat16 if major >= 8 else torch.float16
+
+
+def git_commit() -> str | None:
+    """Kurzer Hash des Code-Stands (z.B. "2d4840c"), damit man später weiß, mit welchem Code ein Modell entstand."""
+    try:
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).parent,
+                                       stderr=subprocess.DEVNULL, text=True).strip()
+    except Exception:  # noqa: BLE001 – kein git oder kein Repo
+        return None
 
 
 def infinite(loader):
@@ -235,13 +247,37 @@ def main():
         best = ckpt.get("best", best)
         print(f"resumed from {resume} @ step {step}")
 
+    # ---------------------------------------------------------------- Modell-Steckbrief
+    # Jede gespeicherte Datei bekommt einen "Steckbrief" (meta) mit: wann, mit welchem Code, auf welchen
+    # Daten, mit welchen Einstellungen und wie gut (Validation Loss) sie entstanden ist. So weiß jede
+    # Datei selbst, was sie ist – anzeigen mit: python -m wednesday.info <datei.pt>
+    commit = git_commit()
+    last_val: dict = {}  # Ergebnis der letzten Validierung (wird unten bei jeder Messung aktualisiert)
+
+    def meta(best_of: str | None = None) -> dict:
+        return {
+            "created": datetime.datetime.now().isoformat(timespec="seconds"),
+            "git": commit,
+            "run": out.parent.name, "stage": out.name,
+            "init": args.init,
+            "args": vars(args),
+            "data": {"train": dict(Counter(ds.groups)), "val": dict(Counter(val_groups)) if val_x is not None else {}},
+            "val": dict(last_val),
+            "best_of": best_of,
+        }
+
     def save(path: Path):
         """Vollständiger Zwischenstand (zum Weitermachen)."""
         torch.save({
             "model": model.state_dict(), "ema": ema.state_dict(), "opt": opt.state_dict(),
             "sched": sched.state_dict(), "scaler": scaler.state_dict(), "step": step,
-            "model_config": model.config, "args": vars(args), "best": best,
+            "model_config": model.config, "args": vars(args), "best": best, "meta": meta(),
         }, path)
+
+    def save_inference(path: Path, best_of: str | None = None):
+        """Kleiner Checkpoint nur zum Generieren: Gewichte des Doppelgängers + Bauanleitung + Steckbrief."""
+        torch.save({"ema": ema.state_dict(), "model_config": model.config, "step": step,
+                    "meta": meta(best_of)}, path)
 
     def save_samples():
         """16 Beispielbilder vom Doppelgänger als 4×4-Raster, Dateiname = aktueller Schritt."""
@@ -345,6 +381,8 @@ def main():
         validated = val_x is not None and (step % args.val_every == 0 or step == args.steps)
         if validated:
             v = evaluate()
+            last_val.clear()
+            last_val.update(v)
             row.update(v)
             per_group = ", ".join(f"{g} {v[f'val_{g}']:.4f}" for g in groups) if len(groups) > 1 else ""
             pbar.write(f"   val @ {step:>7} | train(fest) {v['trainfix_loss']:.4f} | val {v['val_loss']:.4f}"
@@ -359,8 +397,7 @@ def main():
                 if v[key] < best:
                     best = v[key]
                     save(out / "best.pt")
-                    torch.save({"ema": ema.state_dict(), "model_config": model.config, "step": step},
-                               out / "best_frog.pt")
+                    save_inference(out / "best_frog.pt", best_of=args.keep_best)
                     pbar.write(f"   neuer Bestwert {args.keep_best} {best:.4f} -> best_frog.pt")
         if row:
             metrics.write({"step": step, **row})
@@ -372,9 +409,9 @@ def main():
             save(out / "last.pt")
     pbar.close()
 
-    # Kleiner Checkpoint nur zum Generieren: nur die Gewichte des Doppelgängers + Bauanleitung
-    # (ein Bruchteil von last.pt, das zusätzlich Optimizer-Zustand und Rohgewichte enthält).
-    torch.save({"ema": ema.state_dict(), "model_config": model.config, "step": step}, out / "frog.pt")
+    # Kleiner Checkpoint nur zum Generieren (ein Bruchteil von last.pt, das zusätzlich Optimizer-Zustand
+    # und Rohgewichte enthält).
+    save_inference(out / "frog.pt")
     print(f"done. inference checkpoint: {out / 'frog.pt'}")
 
 
