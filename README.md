@@ -1,93 +1,102 @@
-# 🐸 It is Wednesday my dudes – Flow-Matching-Frosch-Generator
+# 🐸 It is Wednesday my dudes – a flow matching frog generator
 
-Ein kleines, selbstgebautes generatives Modell (Rectified Flow / Flow Matching + UNet), das auf Knopfdruck einen beigen Mittwochsfrosch träumt. Pixelig und messy ist Absicht.
+A small, home-made generative model (rectified flow / flow matching + UNet) that dreams up a beige Wednesday frog at the push of a button. Pixelated and messy on purpose.
 
 ## Setup (Mac)
 ```bash
 uv venv && source .venv/bin/activate
-uv pip install -e '.[data]'          # + '.[clip]' für den Frosch-Filter, '.[app]' für die Web-UI
+uv pip install -e '.[data]'          # + '.[clip]' for the frog filter, '.[app]' for the web app
 ```
 
-## 1. Daten sammeln
-Zwei Sorten Bilder: **Memes** (`data/raw/`, das eigentliche Ziel) und **allgemeine Froschfotos**
-(`data/pretrain/raw/`, damit das Netz lernt, wie Frösche aussehen). Alle Quellen laufen durch dieselben Filter:
-Website-Grafiken und Bilder unter 200 px raus, Duplikate raus (auch in anderer Größe), mit `--clip` zusätzlich alles
-ohne Frosch (Bildmodell CLIP, landet zum Durchsehen in `data/rejected/`, nichts wird gelöscht).
+## 1. Collect data
+Two kinds of images: **memes** (`data/raw/`, the actual goal) and **general frog photos** (`data/pretrain/raw/`, so the
+network learns what frogs look like). All sources run through the same filters: website graphics and images below
+200 px out, duplicates out (also in other sizes), and with `--clip` additionally everything without a frog (image model
+CLIP; rejected images go to `data/rejected/` for review, nothing is deleted).
 
 ```bash
-uv pip install -e '.[data,clip]'                                  # einmalig (CLIP lädt ~350 MB Modell)
+uv pip install -e '.[data,clip]'                         # once (CLIP downloads a ~350 MB model)
 
-python scripts/collect.py archive --clip            # alle Bild-Posts der Mittwochs-Subreddits (Reddit-Archiv, ohne Login)
-python scripts/collect.py inat --n 3000             # Frosch-/Krötenfotos von iNaturalist
-python scripts/collect.py import ~/Desktop/frog --clip   # eigener Ordner (Chat-Export, Downloads, ...)
-python scripts/collect.py dedupe                    # Duplikate aus data/raw/manual räumen
+python scripts/collect.py archive --clip                 # all image posts of the Wednesday subreddits (reddit archive, no login)
+python scripts/collect.py inat --n 3000                  # frog/toad photos from iNaturalist
+python scripts/collect.py import ~/Desktop/frog --clip   # a folder of your own (chat export, downloads, ...)
+python scripts/collect.py dedupe                         # clean duplicates out of data/raw/manual
 ```
-- `archive` holt über das öffentliche Reddit-Archiv **Arctic Shift** nur die Post-Bilder (keine Avatare, keine Werbung) aus
-  r/ItIsWednesday, r/wednesdaymydudes, r/WednesdayFrog, r/ItIsWednesdayMyDudes (`--subreddit` ändert die Liste).
-- `inat` lädt bestimmte Beobachtungen erwachsener Frösche und Kröten mit freier Lizenz, ein Drittel davon von
-  rundlichen Gattungen (*Breviceps*, *Ceratophrys*, …). Herkunft und Lizenz stehen in `data/cache/inat_metadata.jsonl`.
-- Erneutes Ausführen lädt nur Neues (`data/cache/*.seen`). Von Hand gelöschte Bilder kommen also nicht zurück.
-- Formate: JPG, PNG, WebP, GIF, `.jfif`, `.avif`, iPhone-`.heic`. Jede Auflösung und jedes Seitenverhältnis.
-- Direkt von reddit.com laden (gallery-dl, Browser-Erweiterung) funktioniert nicht oder liefert viel Müll. Deshalb `archive`.
+- `archive` uses the public reddit archive **Arctic Shift** to fetch only the post images (no avatars, no ads) from
+  r/ItIsWednesday, r/wednesdaymydudes, r/WednesdayFrog, r/ItIsWednesdayMyDudes (`--subreddit` changes the list).
+- `inat` downloads research-grade observations of adult frogs and toads with open licences, a third of them from round
+  genera (*Breviceps*, *Ceratophrys*, …). Origin and licence are stored in `data/cache/inat_metadata.jsonl`.
+- Running again only downloads new things (`data/cache/*.seen`). Images deleted by hand therefore do not come back.
+- Formats: JPG, PNG, WebP, GIF, `.jfif`, `.avif`, iPhone `.heic`. Any resolution and aspect ratio.
+- Downloading directly from reddit.com (gallery-dl, browser extension) does not work or yields lots of junk – hence `archive`.
 
-## 2. Aufbereiten
+## 2. Prepare
 ```bash
-python scripts/prepare.py        # Memes: mittiges Quadrat, 64 + 128 px -> data/wednesday-frogs.zip
+python scripts/prepare.py        # memes: centre square, 64 + 128 px -> data/wednesday-frogs.zip
 python scripts/prepare.py --raw data/pretrain/raw --out data/pretrain/processed --zip-name frog-photos
-                                 # Froschfotos -> data/pretrain/frog-photos.zip
+                                 # frog photos -> data/pretrain/frog-photos.zip
 ```
 
-## 3. Smoke-Test lokal (MPS, ~10 min)
+## 3. Local smoke test
 ```bash
 python train.py --data data/processed/64 --res 64 --base 32 --batch 16 --steps 1500 --warmup 100 --lr 5e-4 \
     --limit 32 --workers 0 --sample-every 500 --out runs/overfit
 ```
-In `runs/overfit/samples/` sollten nach ein paar hundert Schritten Formen zu sehen sein.
+After a few hundred steps, shapes should appear in `runs/overfit/samples/`. Real training belongs on a GPU (Kaggle).
 
-## 4. Richtig trainieren (Kaggle/Colab)
-1. Beide Zips als Kaggle-Datasets hochladen: `data/wednesday-frogs.zip` als `wednesday-frogs`, `data/pretrain/frog-photos.zip`
-   als `frog-photos` (bzw. beide in Google Drive legen).
-2. `notebooks/train_kaggle.ipynb` öffnen (klont das öffentliche Repo `alexanderulbrich/wednesday`), GPU und Internet an, alle Zellen ausführen.
-3. **Schneller Prototyp zuerst** (eigene Zelle, ~30 min): kleineres Netz (`--base 32`) mit Zeitbudget `--minutes 25`. Danach erzeugt die nächste Zelle direkt 16 Frösche.
-   **Großer Lauf im Hintergrund:** `notebooks/big_run_kaggle.ipynb` importieren, Parameter oben anpassen, *Save Version → Save & Run All (Commit)*. Der Tab darf zu sein; die Ergebnisse stehen danach im Output der Version.
-   Das volle Training trainiert in zwei Stufen, jeweils in 64 px aus den schärferen 128er Bildern:
-   - **Pretrain** auf Froschfotos + Memes (40k Schritte)
-   - **Fine-Tune** nur auf die Memes (`train.py --init …`, 10k Schritte, kleinere Lernrate)
-4. Ein Fortschrittsbalken zeigt Schritt, Loss und Restzeit; zusätzlich steht alle 100 Schritte eine Protokollzeile mit `noch ~…` im Log.
-   5 % der Bilder werden zurückgehalten. Alle 1000 Schritte zeichnet `train.py` nach `pre/loss.png` bzw. `ft/loss.png`: links den Trainings-Loss, rechts Trainings- gegen Validierungsbilder (Zahlen in `metrics.csv`). Wächst rechts der Abstand zwischen „train (fest)“ und „val“, lernt das Modell die Trainingsbilder auswendig. Erklärung in `wednesday/monitor.py`.
-5. `frog.pt` aus `ft/` herunterladen.
+## 4. Train for real (Kaggle/Colab)
+1. Upload both zips as Kaggle datasets: `data/wednesday-frogs.zip` as `wednesday-frogs`, `data/pretrain/frog-photos.zip`
+   as `frog-photos` (or put both into Google Drive). Both may also live in one dataset.
+2. Open `notebooks/train_kaggle.ipynb` (it clones the public repo `alexanderulbrich/wednesday`), switch on GPU and internet,
+   run all cells.
+3. **Quick prototype first** (its own cell, ~30 min): a smaller network (`--base 32`) with the time budget `--minutes 25`.
+   The next cell then creates 16 frogs right away.
+   **Big run in the background:** import `notebooks/big_run_kaggle.ipynb`, adjust the parameters at the top,
+   *Save Version → Save & Run All (Commit)*. The tab may be closed; the results end up in the version's output.
+   The full training runs in two stages, each at 64 px from the sharper 128 px images:
+   - **pretrain** on frog photos + memes
+   - **fine-tune** on the memes only (`train.py --init …`, smaller learning rate, `--keep-best` keeps the best meme state)
+4. A progress bar shows step, loss and remaining time; in addition the log gets a line with `~… left` every 100 steps.
+   5 % of the images are held back. Every 1000 steps `train.py` draws `loss.png`: on the left the training loss, on the
+   right training vs. validation images (numbers in `metrics.csv`). If the gap between "train (fixed)" and "val" grows on
+   the right, the model is memorizing the training images. Explained in `wednesday/monitor.py`.
+5. Download `best_frog.pt` from `ft/`.
 
-## Modelle verwalten
-Trainierte Modelle (`frog.pt`, `best_frog.pt` aus Kaggle) lokal in den Ordner `models/` legen, Namensschema
-`JJJJ-MM-TT_<name>_<stufe>.pt`, z.B. `2026-11-13_big-b64_ft-best.pt`. Jede neue Modelldatei trägt einen Steckbrief
-(Datum, Code-Stand, Daten, Einstellungen, Validation Loss):
+## Managing models
+Put trained models (`frog.pt`, `best_frog.pt` from Kaggle) into the local `models/` folder, naming scheme
+`YYYY-MM-DD_<name>_<stage>.pt`, e.g. `2026-11-13_big-b64_ft-best.pt`. Every new model file carries a profile
+(date, code version, data, settings, validation loss):
 ```bash
-python -m wednesday.info models/*.pt        # Steckbriefe + Vergleichstabelle
-python -m wednesday.info --registry         # Übersicht nach models/README.md schreiben
-python generate.py --ckpt latest            # jüngstes Modell aus models/ benutzen
+python -m wednesday.info models/*.pt        # profiles + comparison table
+python -m wednesday.info --registry         # write an overview to models/README.md
+python generate.py --ckpt latest            # use the newest model from models/
 ```
+Note: a `.pt` file is internally a zip archive. If the browser saves it as `.zip`, just rename it back to `.pt` (in the
+terminal – the Finder hides extensions); do not unpack it.
 
-## 5. Knopf drücken
+## 5. Push the button
 ```bash
-python generate.py --ckpt frog.pt                  # ein Frosch, öffnet sich direkt
-python generate.py --ckpt frog.pt --n 9 --grid     # Raster
-python generate.py --ckpt frog.pt --text           # mit "IT IS WEDNESDAY MY DUDES"
+python generate.py --ckpt frog.pt                  # one frog, opens right away
+python generate.py --ckpt frog.pt --n 9 --grid     # grid
+python generate.py --ckpt frog.pt --text           # with "IT IS WEDNESDAY MY DUDES"
 python generate.py --ckpt frog.pt --steps 3        # extra messy
-python app.py --ckpt frog.pt                       # Web-UI mit Button
 ```
 
 ## App
 ```bash
 uv pip install -e '.[app]'
-python app.py            # dann http://127.0.0.1:7860 öffnen
+python app.py            # then open http://127.0.0.1:7860
 ```
-Modell, Seed und Schritte wählen, „▶ Mittwoch!“ drücken und zusehen, wie aus Rauschen ein Frosch wird. Rechts zeigen
-Kurven, wie sich der Flow einpendelt: wie stark sich die Vermutung des Netzes noch ändert, wie gerade der Weg ist,
-und die Flugbahn vom Rauschen zum Bild.
+Pick model, seed and steps, press "▶ Wednesday!" and watch noise turn into a frog. On the right, curves show how the
+flow settles: how much the network's guess still changes, how straight the path is, and the trajectory from noise to
+image.
 
-## Wie es funktioniert
-Der Code ist zum Lesen gedacht: Jede Datei ist ein Kapitel mit ausführlichen deutschen Kommentaren. Das Inhaltsverzeichnis steht in `wednesday/__init__.py`. Wer nur das Prinzip verstehen will, liest Kapitel 4 (`wednesday/flow.py`), 5 (`wednesday/model.py`) und 7 (`train.py`).
+## How it works
+The code is meant to be read: every file is a chapter with detailed comments. The table of contents is in
+`wednesday/__init__.py`. If you only want to understand the principle, read chapter 4 (`wednesday/flow.py`),
+5 (`wednesday/model.py`) and 7 (`train.py`).
 
-- **Training:** Rauschen `x0` und Bild `x1` werden linear gemischt, `x_t = (1-t)·x0 + t·x1`. Das UNet lernt die Geschwindigkeit `v = x1 - x0` (MSE-Loss). `t` wird logit-normal gezogen, wie bei SD3.
-- **Sampling:** Die ODE `dx/dt = v(x, t)` wird mit Heun oder Euler von reinem Rauschen (t=0) bis zum Bild (t=1) integriert.
-- Code: `wednesday/flow.py` (Loss + Sampler), `wednesday/model.py` (UNet), `train.py`, `generate.py`.
+- **Training:** noise `x0` and image `x1` are mixed linearly, `x_t = (1-t)·x0 + t·x1`. The UNet learns the velocity
+  `v = x1 - x0` (MSE loss). `t` is drawn logit-normal, as in SD3.
+- **Sampling:** the ODE `dx/dt = v(x, t)` is integrated with Heun or Euler from pure noise (t=0) to the image (t=1).
+- Code: `wednesday/flow.py` (loss + sampler), `wednesday/model.py` (UNet), `train.py`, `generate.py`, `app.py`.

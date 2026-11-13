@@ -1,14 +1,14 @@
-"""Kapitel 8 – Der Knopf: neue Mittwochsfrösche erzeugen.
+"""Chapter 8 – The button: creating new Wednesday frogs.
 
-Hier kommt alles zusammen: Wir laden das trainierte Netz (Kapitel 5, gespeichert von Kapitel 7),
-lassen es mit dem Sampler aus Kapitel 4 aus Rauschen Bilder machen, vergrößern sie pixelig und
-schreiben auf Wunsch den klassischen Spruch drauf.
+Everything comes together here: we load the trained network (chapter 5, saved by chapter 7), let it turn
+noise into images with the sampler from chapter 4, enlarge them pixel-style and, if wanted, write the
+classic caption on top.
 
-    python generate.py --ckpt frog.pt                 # ein Frosch -> outputs/, öffnet sich direkt
-    python generate.py --ckpt frog.pt --n 9 --grid    # neun Frösche in einem Raster
-    python generate.py --ckpt frog.pt --text          # mit "IT IS WEDNESDAY MY DUDES"
-    python generate.py --ckpt frog.pt --steps 4       # extra messy (wenige Sampling-Schritte)
-    python generate.py --ckpt frog.pt --seed 42       # gleicher Seed = gleicher Frosch
+    python generate.py --ckpt frog.pt                 # one frog -> outputs/, opens right away
+    python generate.py --ckpt frog.pt --n 9 --grid    # nine frogs in one grid
+    python generate.py --ckpt frog.pt --text          # with "IT IS WEDNESDAY MY DUDES"
+    python generate.py --ckpt frog.pt --steps 4       # extra messy (few sampling steps)
+    python generate.py --ckpt frog.pt --seed 42       # same seed = same frog
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from wednesday import get_device, load_model
 from wednesday.data import make_grid, to_pil
 from wednesday.flow import sample
 
-# Die klassische Meme-Schrift ist Impact. Wir probieren mehrere Orte (Mac, Linux) und nehmen
-# notfalls eine ähnlich fette Schrift.
+# The classic meme font is Impact. We try several locations (Mac, Linux) and fall back to a similarly bold
+# font if needed.
 FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Impact.ttf",
     "/Library/Fonts/Impact.ttf",
@@ -39,7 +39,7 @@ FONT_CANDIDATES = [
 
 
 def load_font(size: int):
-    """Die erste vorhandene Schrift aus der Liste, sonst die eingebaute Standardschrift."""
+    """The first available font from the list, otherwise the built-in default font."""
     for f in FONT_CANDIDATES:
         if Path(f).exists():
             return ImageFont.truetype(f, size)
@@ -47,15 +47,15 @@ def load_font(size: int):
 
 
 def add_caption(img: Image.Image, top: str = "IT IS WEDNESDAY", bottom: str = "MY DUDES") -> Image.Image:
-    """Schreibt Text oben und unten aufs Bild: weiß mit schwarzem Rand, wie bei echten Memes."""
-    img = img.copy()  # das Original nicht verändern
+    """Writes text at the top and bottom of the image: white with a black outline, like real memes."""
+    img = img.copy()  # don't change the original
     draw = ImageDraw.Draw(img)
-    size = img.width // 9  # Schriftgröße passend zur Bildbreite
+    size = img.width // 9  # font size matching the image width
     font = load_font(size)
-    stroke = max(2, size // 12)  # Dicke des schwarzen Randes
+    stroke = max(2, size // 12)  # thickness of the black outline
     for text, y in ((top, size // 3), (bottom, img.height - size - size // 2)):
         w = draw.textlength(text, font=font)
-        draw.text(((img.width - w) / 2, y), text, font=font, fill="white",  # waagerecht zentriert
+        draw.text(((img.width - w) / 2, y), text, font=font, fill="white",  # horizontally centred
                   stroke_width=stroke, stroke_fill="black")
     return img
 
@@ -75,24 +75,24 @@ def main():
     p.add_argument("--no-open", action="store_true")
     args = p.parse_args()
 
-    # 1. Netz laden. cfg ist die Bauanleitung, u.a. mit der Auflösung, für die es trainiert wurde.
+    # 1. Load the network. cfg is the blueprint, including the resolution it was trained for.
     device = get_device(args.device)
     model, cfg = load_model(args.ckpt, device)
 
-    # 2. Seed festlegen. Ohne Angabe ein zufälliger – er steht im Dateinamen, damit man einen
-    #    gelungenen Frosch später mit --seed exakt wiederholen kann.
+    # 2. Fix the seed. If none is given, a random one – it ends up in the file name, so a successful frog can
+    #    later be repeated exactly with --seed.
     seed = args.seed if args.seed is not None else random.randrange(2**31)
     g = torch.Generator().manual_seed(seed)
 
-    # 3. Generieren (Kapitel 4) und in normale Bilder umwandeln (Kapitel 3).
+    # 3. Generate (chapter 4) and convert to normal images (chapter 3).
     imgs = to_pil(sample(model, args.n, cfg["res"], steps=args.steps, method=args.method,
                          device=device, generator=g))
-    # 4. Pixelig vergrößern: NEAREST macht aus jedem Pixel einen Block, statt zu verschmieren.
+    # 4. Enlarge pixel-style: NEAREST turns every pixel into a block instead of smearing.
     imgs = [im.resize((args.size, args.size), Image.NEAREST) for im in imgs]
     if args.text:
         imgs = [add_caption(im) for im in imgs]
 
-    # 5. Speichern, Dateiname mit Zeitstempel und Seed.
+    # 5. Save, file name with time stamp and seed.
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -104,7 +104,7 @@ def main():
         im.save(path)
         paths.append(path)
         print(path)
-    # 6. Auf dem Mac direkt in der Vorschau öffnen.
+    # 6. On the Mac, open right away in Preview.
     if not args.no_open and sys.platform == "darwin":
         subprocess.run(["open", *map(str, paths)], check=False)
 

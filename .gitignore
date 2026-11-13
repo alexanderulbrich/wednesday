@@ -1,18 +1,18 @@
-# Python / Umgebung
+# Python / environment
 __pycache__/
 *.egg-info/
 .venv/
 .ipynb_checkpoints/
 
-# Daten (Rohbilder, aufbereitete Bilder, Review-Ordner)
+# Data (raw images, prepared images, review folders)
 data/
 *.zip
 
-# Fake-/Testbilder für Smoke-Tests
+# Fake/test images for smoke tests
 fake/
 fake_*/
 
-# Trainingsläufe, Checkpoints, generierte Bilder, lokale Modellsammlung
+# Training runs, checkpoints, generated images, local model collection
 runs/
 models/
 outputs/

@@ -1,45 +1,45 @@
-"""It is Wednesday my dudes – ein kleiner, selbstgebauter Frosch-Generator mit Flow Matching.
+"""It is Wednesday my dudes – a small, home-made frog generator based on flow matching.
 
-Vorwort und Inhaltsverzeichnis
-==============================
-Dieses Projekt lässt sich von vorne nach hinten lesen wie ein Buch. Jede Datei beginnt mit einer
-Erklärung, worum es in ihr geht; die Kommentare im Code erzählen die Details.
+Preface and table of contents
+=============================
+This project can be read from front to back like a book. Every file starts with an explanation of what
+it is about; the comments in the code tell the details.
 
-    Kapitel 1  scripts/collect.py      Bilder sammeln (Reddit-Archiv, iNaturalist, eigene Ordner)
-    Kapitel 2  scripts/prepare.py      Bilder aufbereiten: quadratisch, klein, als Zip für Kaggle
-    Kapitel 3  wednesday/data.py       Bilder ins Training füttern (mit zufälligen Variationen)
-    Kapitel 4  wednesday/flow.py       Die Kernidee: Flow Matching – wie aus Rauschen ein Bild wird
-    Kapitel 5  wednesday/model.py      Das neuronale Netz (UNet)
-    Kapitel 6  wednesday/ema.py        Ein geglätteter Doppelgänger des Netzes für schönere Bilder
-    Kapitel 7  train.py                Die Trainingsschleife
-    Kapitel 8  generate.py             Der Knopf: neue Frösche erzeugen
+    Chapter 1   scripts/collect.py      Collecting images (reddit archive, iNaturalist, your own folders)
+    Chapter 2   scripts/prepare.py      Preparing images: square, small, zipped for Kaggle
+    Chapter 3   wednesday/data.py       Feeding images to the training (with random variations)
+    Chapter 4   wednesday/flow.py       The core idea: flow matching – how noise turns into an image
+    Chapter 5   wednesday/model.py      The neural network (UNet)
+    Chapter 6   wednesday/ema.py        A smoothed twin of the network for nicer images
+    Chapter 7   train.py                The training loop
+    Chapter 8   generate.py             The button: creating new frogs
 
-    Anhang A   wednesday/formats.py    Welche Dateien sind Bilder, welche sind Website-Müll?
-    Anhang B   wednesday/clipfilter.py Ein fertiges Bildmodell (CLIP) prüft: Ist da ein Frosch drauf?
-    Anhang C   app.py                  Die App: live zusehen, wie aus Rauschen ein Frosch wird
-    Anhang D   wednesday/monitor.py    Das Training überwachen: Loss-Tabelle und Loss-Kurven (Overfitting erkennen)
-    Anhang E   wednesday/info.py       Modelle verwalten: Steckbrief jeder .pt-Datei, Ordner models/
-    Anhang F   wednesday/trajectory.py Dem Flow zusehen: Kennzahlen und Flugbahn für die App
+    Appendix A  wednesday/formats.py    Which files are images, and which are website junk?
+    Appendix B  wednesday/clipfilter.py A ready-made image model (CLIP) checks: is there a frog in it?
+    Appendix C  app.py                  The app: watch noise turn into a frog, live
+    Appendix D  wednesday/monitor.py    Monitoring the training: loss table and loss curves (spotting overfitting)
+    Appendix E  wednesday/info.py       Managing models: the profile of every .pt file, the models/ folder
+    Appendix F  wednesday/trajectory.py Watching the flow work: diagnostics and trajectory for the app
 
-Wer nur verstehen will, wie generative Modelle funktionieren, liest Kapitel 4, 5 und 7.
+If you only want to understand how generative models work, read chapters 4, 5 and 7.
 
-Diese Datei selbst enthält zwei kleine Helfer, die überall gebraucht werden.
+This file itself contains two small helpers that are needed everywhere.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-# torch wird erst innerhalb der Funktionen importiert. So können die Datenskripte (Kapitel 1 und 2)
-# dieses Paket nutzen, ohne dass das große PyTorch geladen werden muss.
+# torch is only imported inside the functions. That way the data scripts (chapters 1 and 2) can use
+# this package without loading the big PyTorch library.
 if TYPE_CHECKING:
     import torch
 
 
 def get_device(prefer: str | None = None) -> torch.device:
-    """Wählt den schnellsten verfügbaren Rechenchip.
+    """Picks the fastest available compute chip.
 
-    cuda = NVIDIA-Grafikkarte (Kaggle/Colab), mps = Apple-Chip (Mac), sonst der normale Prozessor.
+    cuda = NVIDIA GPU (Kaggle/Colab), mps = Apple chip (Mac), otherwise the normal processor.
     """
     import torch
 
@@ -53,24 +53,24 @@ def get_device(prefer: str | None = None) -> torch.device:
 
 
 def load_model(ckpt_path: str, device: torch.device | str = "cpu", use_ema: bool = True):
-    """Lädt ein fertig trainiertes Netz aus einer Checkpoint-Datei von train.py.
+    """Loads a trained network from a checkpoint file written by train.py.
 
-    Der Checkpoint enthält die Bauanleitung (model_config) und die gelernten Zahlen (Gewichte).
-    Standardmäßig werden die geglätteten EMA-Gewichte genommen (Kapitel 6), die schönere Bilder machen.
-    Rückgabe: (Netz, Bauanleitung).
+    The checkpoint contains the blueprint (model_config) and the learned numbers (weights).
+    By default the smoothed EMA weights are used (chapter 6), which make nicer images.
+    Returns: (network, blueprint).
     """
     import torch
 
     from .model import UNet
 
-    if str(ckpt_path) == "latest":  # "latest" = neueste Datei in models/ (Anhang E)
+    if str(ckpt_path) == "latest":  # "latest" = newest file in models/ (appendix E)
         from .info import latest
 
         ckpt_path = latest()
-        print(f"Modell: {ckpt_path}")
+        print(f"model: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    model = UNet(**ckpt["model_config"])  # leeres Netz nach Bauanleitung ...
+    model = UNet(**ckpt["model_config"])  # empty network built from the blueprint ...
     key = "ema" if use_ema and "ema" in ckpt else "model"
-    model.load_state_dict(ckpt[key])  # ... mit den gelernten Gewichten füllen
-    # .eval() schaltet Trainings-Besonderheiten wie Dropout ab.
+    model.load_state_dict(ckpt[key])  # ... filled with the learned weights
+    # .eval() switches off training-only behaviour such as dropout.
     return model.to(device).eval(), ckpt["model_config"]

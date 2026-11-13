@@ -1,18 +1,17 @@
-"""Anhang E – Modelle verwalten: Was steckt in welcher .pt-Datei?
+"""Appendix E – Managing models: what is inside which .pt file?
 
-Jede Modelldatei aus train.py trägt einen Steckbrief ("meta"): wann sie entstanden ist, mit welchem
-Code-Stand, auf welchen Daten, mit welchen Einstellungen und wie gut sie bei der Validierung war.
-Dieses Werkzeug zeigt ihn an:
+Every model file written by train.py carries a profile ("meta"): when it was created, with which code
+version, on which data, with which settings and how well it did in validation. This tool shows it:
 
-    python -m wednesday.info models/2026-11-13_big-b64_ft-best.pt      # Steckbrief einer Datei
-    python -m wednesday.info models/*.pt                               # Vergleichstabelle
-    python -m wednesday.info --registry                                # models/README.md neu schreiben
+    python -m wednesday.info models/2026-11-13_big-b64_ft-best.pt      # profile of one file
+    python -m wednesday.info models/*.pt                               # comparison table
+    python -m wednesday.info --registry                                # rewrite models/README.md
 
-Ältere Dateien ohne Steckbrief (z.B. der Prototyp vom 12.11.) funktionieren trotzdem: Dann wird
-angezeigt, was sich aus der Datei selbst ablesen lässt (Netzgröße, Parameterzahl, Schritte).
+Older files without a profile (e.g. the prototype from 12 Nov) still work: then whatever can be read from
+the file itself is shown (network size, number of parameters, steps).
 
-Namensschema für den Ordner models/:  JJJJ-MM-TT_<name>_<stufe>.pt
-    z.B. 2026-11-12_proto-b32_ft.pt, 2026-11-13_big-b64_pre.pt, 2026-11-13_big-b64_ft-best.pt
+Naming scheme for the models/ folder:  YYYY-MM-DD_<name>_<stage>.pt
+    e.g. 2026-11-12_proto-b32_ft.pt, 2026-11-13_big-b64_pre.pt, 2026-11-13_big-b64_ft-best.pt
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ MODELS = Path("models")
 
 
 def load(path: str | Path) -> dict:
-    """Liest nur das Nötige aus einer Modelldatei (auf der CPU, ohne ein Netz zu bauen)."""
+    """Reads only what is needed from a model file (on the CPU, without building a network)."""
     import torch
 
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
@@ -33,14 +32,14 @@ def load(path: str | Path) -> dict:
     meta = ckpt.get("meta") or {}
     cfg = ckpt.get("model_config", {})
     val = meta.get("val") or {}
-    # Ohne Steckbrief: Datum aus dem Dateinamen (Namensschema JJJJ-MM-TT_...), sonst das Dateidatum.
+    # Without a profile: date from the file name (naming scheme YYYY-MM-DD_...), otherwise the file date.
     created = meta.get("created")
     if not created:
         name = Path(path).name
         try:
-            created = dt.date.fromisoformat(name[:10]).isoformat() + " (aus Dateiname)"
+            created = dt.date.fromisoformat(name[:10]).isoformat() + " (from file name)"
         except ValueError:
-            created = dt.datetime.fromtimestamp(Path(path).stat().st_mtime).isoformat(timespec="minutes") + " (Dateidatum)"
+            created = dt.datetime.fromtimestamp(Path(path).stat().st_mtime).isoformat(timespec="minutes") + " (file date)"
     return {
         "file": Path(path).name,
         "created": created,
@@ -63,29 +62,29 @@ def _f(v, fmt="{:.4f}"):
 
 
 def show(info: dict) -> None:
-    """Steckbrief einer Datei, lesbar ausgegeben."""
+    """Prints the profile of one file in readable form."""
     print(f"== {info['file']}")
-    print(f"   erstellt:   {info['created']}")
-    print(f"   Netz:       base {info['base']}, {info['res']} px, {info['params']:.1f}M Parameter")
-    print(f"   Schritte:   {info['step']}" + (f"   (Stufe {info['stage']})" if info["stage"] else ""))
+    print(f"   created:    {info['created']}")
+    print(f"   network:    base {info['base']}, {info['res']} px, {info['params']:.1f}M parameters")
+    print(f"   steps:      {info['step']}" + (f"   (stage {info['stage']})" if info["stage"] else ""))
     if info["init"]:
-        print(f"   gestartet von: {info['init']}")
+        print(f"   started from: {info['init']}")
     if info["best_of"]:
-        print(f"   bester Stand nach: Validation Loss {'gesamt' if info['best_of'] == 'val' else info['best_of']}")
+        print(f"   best state by: validation loss {'overall' if info['best_of'] == 'val' else info['best_of']}")
     if info["val_all"]:
-        names = {"val_loss": "gesamt"}
-        print("   Validation Loss: " + ", ".join(f"{names.get(k, k[4:])} {v:.4f}" for k, v in info["val_all"].items()))
+        names = {"val_loss": "overall"}
+        print("   validation loss: " + ", ".join(f"{names.get(k, k[4:])} {v:.4f}" for k, v in info["val_all"].items()))
     if info["data"]:
-        print(f"   Daten:      Training {info['data'].get('train')}, Validierung {info['data'].get('val')}")
+        print(f"   data:       training {info['data'].get('train')}, validation {info['data'].get('val')}")
     if info["git"]:
-        print(f"   Code-Stand: {info['git']}")
+        print(f"   code:       {info['git']}")
     if not info["has_meta"]:
-        print("   (kein Steckbrief – Datei stammt aus einer älteren Version von train.py)")
+        print("   (no profile – the file comes from an older version of train.py)")
 
 
 def table(infos: list[dict]) -> str:
-    """Vergleichstabelle im Markdown-Format (passt ins Terminal und in models/README.md)."""
-    rows = ["| Datei | erstellt | Netz | Schritte | val | val Memes |", "|---|---|---|---|---|---|"]
+    """Comparison table in Markdown format (fits the terminal and models/README.md)."""
+    rows = ["| file | created | network | steps | val | val memes |", "|---|---|---|---|---|---|"]
     for i in infos:
         rows.append(f"| {i['file']} | {i['created'].split(' (')[0][:16].replace('T', ' ')} | base {i['base']} ({i['params']:.1f}M) | {i['step']} "
                     f"| {_f(i['val'])} | {_f(i['val_memes'])} |")
@@ -93,10 +92,10 @@ def table(infos: list[dict]) -> str:
 
 
 def latest(folder: Path = MODELS) -> Path:
-    """Die neueste .pt-Datei in models/ (nach Name: dank Datum vorne = die jüngste)."""
+    """The newest .pt file in models/ (by name: thanks to the date at the front, the most recent one)."""
     files = sorted(folder.glob("*.pt"))
     if not files:
-        raise FileNotFoundError(f"keine .pt-Dateien in {folder}/")
+        raise FileNotFoundError(f"no .pt files in {folder}/")
     return files[-1]
 
 
@@ -107,15 +106,15 @@ def main():
     a = ap.parse_args()
     files = a.files or sorted(MODELS.glob("*.pt"))
     if not files:
-        raise SystemExit("keine Modelldateien angegeben und keine in models/ gefunden")
+        raise SystemExit("no model files given and none found in models/")
     infos = [load(f) for f in files]
     if a.registry:
         MODELS.mkdir(exist_ok=True)
         (MODELS / "README.md").write_text(
-            "# Modelle\n\nAutomatisch erzeugt mit `python -m wednesday.info --registry`. "
-            "Validation Loss: niedriger = besser (fester Vergleichstest, siehe wednesday/monitor.py).\n\n"
+            "# Models\n\nGenerated automatically with `python -m wednesday.info --registry`. "
+            "Validation loss: lower = better (fixed comparison test, see wednesday/monitor.py).\n\n"
             + table(infos) + "\n")
-        print(f"{MODELS / 'README.md'} geschrieben ({len(infos)} Modelle)")
+        print(f"{MODELS / 'README.md'} written ({len(infos)} models)")
     elif len(infos) == 1:
         show(infos[0])
     else:

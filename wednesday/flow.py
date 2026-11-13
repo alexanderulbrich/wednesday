@@ -1,35 +1,34 @@
-"""Kapitel 4 – Flow Matching: wie aus Rauschen ein Frosch wird.
+"""Chapter 4 – Flow matching: how noise turns into a frog.
 
-Das ist die eigentliche Idee hinter dem ganzen Projekt, alles andere ist Handwerk drumherum.
+This is the actual idea behind the whole project; everything else is craftsmanship around it.
 
-Die Grundidee
--------------
-Stell dir zwei Bilder vor: links reines Rauschen (zufällige Pixel), rechts ein echter Frosch.
-Zwischen den beiden ziehen wir eine **gerade Linie**: Auf halbem Weg ist das Bild halb Rauschen,
-halb Frosch, bei 90 % fast nur noch Frosch. Die Zeit ``t`` sagt, wo auf dieser Linie wir sind:
+The basic idea
+--------------
+Imagine two images: on the left pure noise (random pixels), on the right a real frog. Between the two we
+draw a **straight line**: halfway along, the image is half noise and half frog; at 90 % it is almost only
+frog. The time ``t`` says where on this line we are:
 
-    t = 0   ->  reines Rauschen   x0 ~ N(0, 1)
-    t = 1   ->  echtes Bild       x1
-    x_t     =  (1 - t) · x0  +  t · x1          (Punkt auf der Linie)
+    t = 0   ->  pure noise   x0 ~ N(0, 1)
+    t = 1   ->  real image   x1
+    x_t     =  (1 - t) · x0  +  t · x1          (a point on the line)
 
-Wer auf dieser Linie von x0 nach x1 läuft, bewegt sich mit konstanter Geschwindigkeit
+Whoever walks along this line from x0 to x1 moves with a constant velocity
 
-    v  =  x1 - x0                               ("in welche Richtung muss jedes Pixel?")
+    v  =  x1 - x0                               ("which direction does every pixel have to go?")
 
-Training: Wir zeigen dem Netz einen Punkt x_t und die Zeit t und fragen: "In welche Richtung geht es
-hier zum Bild?" Die richtige Antwort v kennen wir, weil wir x0 und x1 ja selbst gewählt haben.
-Der Fehler (mittlere quadratische Abweichung) ist der Loss.
+Training: we show the network a point x_t and the time t and ask: "Which way to the image from here?"
+We know the right answer v, because we picked x0 and x1 ourselves. The error (mean squared error) is
+the loss.
 
-Generieren: Jetzt kennen wir kein x1 mehr – genau das wollen wir ja erfinden. Wir starten bei
-zufälligem Rauschen und fragen das Netz in kleinen Schritten immer wieder nach der Richtung,
-gehen ein Stück, fragen erneut, ... bis t = 1. Mathematisch löst das eine gewöhnliche
-Differentialgleichung (ODE) dx/dt = v(x, t). Am Ende steht ein Bild, das es so nie gab.
+Generating: now we have no x1 – that is exactly what we want to invent. We start from random noise and
+repeatedly ask the network for the direction in small steps, walk a bit, ask again, ... until t = 1.
+Mathematically this solves an ordinary differential equation (ODE) dx/dt = v(x, t). At the end there is
+an image that never existed before.
 
-Warum funktioniert das, obwohl jedes Rauschen zu *irgendeinem* Bild führen könnte? Das Netz lernt
-nicht eine einzelne Linie, sondern den *Durchschnitt* aller Richtungen, die von einem Punkt aus zu
-Bildern führen. Folgt man diesen Durchschnitts-Richtungen, landet man bei Bildern, die aussehen,
-als kämen sie aus den Trainingsdaten. Diese Variante heißt "Rectified Flow" und steckt z.B. auch
-in Stable Diffusion 3 und Flux.
+Why does this work, even though every noise image could lead to *some* image? The network does not learn
+a single line but the *average* of all directions that lead from a point to images. Following these
+average directions ends at images that look as if they came from the training data. This variant is
+called "rectified flow" and is also used in Stable Diffusion 3 and Flux, for example.
 """
 
 from __future__ import annotations
@@ -40,79 +39,79 @@ import torch.nn.functional as F
 
 
 def sample_t(n: int, device, mode: str = "logit_normal", mean: float = 0.0, std: float = 1.0) -> torch.Tensor:
-    """Zieht für jedes Bild im Batch eine zufällige Zeit t zwischen 0 und 1."""
+    """Draws a random time t between 0 and 1 for every image in the batch."""
     if mode == "uniform":
-        # Jede Zeit gleich oft.
+        # Every time equally often.
         return torch.rand(n, device=device)
-    # "Logit-normal" (wie bei SD3): Werte um t = 0,5 kommen häufiger vor als ganz am Rand.
-    # Bei t ≈ 0 (fast nur Rauschen) und t ≈ 1 (fast fertiges Bild) ist die Aufgabe leicht;
-    # in der Mitte entscheidet sich, was für ein Frosch es wird – dort lohnt sich Übung am meisten.
-    # Trick: Normalverteilte Zahl durch die Sigmoid-Funktion schicken -> landet zwischen 0 und 1.
+    # "Logit-normal" (like SD3): values around t = 0.5 occur more often than at the edges.
+    # At t ≈ 0 (almost only noise) and t ≈ 1 (almost finished image) the task is easy;
+    # in the middle it is decided what kind of frog it becomes – practice pays off most there.
+    # Trick: push a normally distributed number through the sigmoid function -> it lands between 0 and 1.
     return torch.sigmoid(mean + std * torch.randn(n, device=device))
 
 
 def flow_matching_loss(model: nn.Module, x1: torch.Tensor, t_mode: str = "logit_normal") -> torch.Tensor:
-    """Ein Trainingsschritt in Formeln: Wie gut sagt das Netz die Richtung Rauschen -> Bild voraus?
+    """One training step in formulas: how well does the network predict the direction noise -> image?
 
-    x1: ein Batch echter Bilder, Form (Batch, 3 Farbkanäle, Höhe, Breite), Werte in [-1, 1].
+    x1: a batch of real images, shape (batch, 3 colour channels, height, width), values in [-1, 1].
     """
-    # 1. Zu jedem echten Bild ein eigenes, frisch gewürfeltes Rauschbild gleicher Größe.
+    # 1. For every real image its own freshly drawn noise image of the same size.
     x0 = torch.randn_like(x1)
-    # 2. Für jedes Bild eine zufällige Position auf der Linie.
+    # 2. For every image a random position on the line.
     t = sample_t(x1.shape[0], x1.device, t_mode)
-    # t hat die Form (Batch,). Damit es pixelweise mit den Bildern (Batch, 3, H, W) multipliziert
-    # werden kann, formen wir es zu (Batch, 1, 1, 1) um ("Broadcasting").
+    # t has shape (batch,). To multiply it pixel-wise with the images (batch, 3, H, W) we reshape it
+    # to (batch, 1, 1, 1) ("broadcasting").
     tb = t.view(-1, 1, 1, 1)
-    # 3. Der Punkt auf der geraden Linie zwischen Rauschen und Bild.
+    # 3. The point on the straight line between noise and image.
     xt = (1 - tb) * x0 + tb * x1
-    # 4. Die richtige Antwort: die (konstante) Geschwindigkeit entlang der Linie.
+    # 4. The right answer: the (constant) velocity along the line.
     v_target = x1 - x0
-    # 5. Was das Netz glaubt.
+    # 5. What the network believes.
     v_pred = model(xt, t)
-    # 6. Mittlere quadratische Abweichung über alle Pixel. .float() rechnet den Loss in voller
-    #    Genauigkeit, auch wenn das Netz im schnelleren 16-Bit-Modus lief (siehe train.py).
+    # 6. Mean squared error over all pixels. .float() computes the loss at full precision, even if the
+    #    network ran in the faster 16-bit mode (see train.py).
     return F.mse_loss(v_pred.float(), v_target.float())
 
 
 @torch.no_grad()
 def validation_loss(model: nn.Module, x1: torch.Tensor, n_t: int = 8, seed: int = 0, batch: int = 64) -> torch.Tensor:
-    """Loss pro Bild, aber mit festem Rauschen und festen Zeitpunkten – zum Vergleichen über die Zeit.
+    """Loss per image, but with fixed noise and fixed times – for comparing over the course of training.
 
-    Der Trainings-Loss oben würfelt Rauschen und t jedes Mal neu und springt deshalb stark. Um zu sehen,
-    ob das Netz besser wird, braucht man eine Messung, die immer exakt gleich abläuft: Jedes Bild wird
-    bei n_t festen, gleichmäßig verteilten Zeitpunkten (bei n_t = 8: 1/16, 3/16, ..., 15/16) mit immer
-    demselben Rauschen (fester Seed) geprüft. Gleiche Gewichte -> exakt gleicher Wert.
+    The training loss above draws new noise and a new t every time and therefore jumps a lot. To see whether
+    the network improves, you need a measurement that always runs exactly the same way: every image is
+    tested at n_t fixed, evenly spaced times (for n_t = 8: 1/16, 3/16, ..., 15/16), always with the same
+    noise (fixed seed). Same weights -> exactly the same value.
 
-    x1: Bilder (N, 3, H, W) auf der CPU. Rückgabe: mittlerer Fehler pro Bild, Form (N,), auf der CPU.
+    x1: images (N, 3, H, W) on the CPU. Returns: mean error per image, shape (N,), on the CPU.
     """
     device = next(model.parameters()).device
     g = torch.Generator().manual_seed(seed)
     losses = torch.zeros(len(x1))
     for k in range(n_t):
         t = (k + 0.5) / n_t
-        x0 = torch.randn(x1.shape, generator=g)  # festes Rauschen, auf der CPU gewürfelt (siehe sample)
+        x0 = torch.randn(x1.shape, generator=g)  # fixed noise, drawn on the CPU (see sample)
         for i in range(0, len(x1), batch):
             xb, x0b = x1[i:i + batch].to(device), x0[i:i + batch].to(device)
             xt = (1 - t) * x0b + t * xb
             v_pred = model(xt, torch.full((len(xb),), t, device=device))
-            # Mittlere quadratische Abweichung pro Bild (über Kanäle und Pixel gemittelt).
+            # Mean squared error per image (averaged over channels and pixels).
             losses[i:i + batch] += (v_pred.float() - (xb - x0b).float()).pow(2).mean(dim=(1, 2, 3)).cpu()
     return losses / n_t
 
 
 @torch.no_grad()
 def sample_steps(model: nn.Module, x: torch.Tensor, steps: int = 30, method: str = "heun"):
-    """Wie sample(), aber Schritt für Schritt zum Zuschauen (für die App): ein Generator.
+    """Like sample(), but step by step for watching (used by the app): a generator.
 
-    x: das Startrauschen (n, 3, H, W) auf dem Rechenchip. Liefert zuerst den Startzustand und dann nach
-    jedem Schritt ein Dictionary mit
-        step, t        Schrittnummer und erreichte Zeit (0 = Rauschen, 1 = fertig)
-        x              der aktuelle Zustand x_t
-        v              die Richtung, die das Netz zu Beginn dieses Schritts geschätzt hat
-        x1_hat         die *Vermutung* des Netzes, wie das fertige Bild aussieht: Wer von x_t aus mit der
-                       Geschwindigkeit v bis t = 1 weiterginge, käme bei x_t + (1 − t)·v an
-        x0_hat         analog rückwärts: das Rauschen, aus dem das Netz glaubt, dass x_t entstanden ist
-    Die Rechnung ist exakt dieselbe wie in sample() – am Ende steht derselbe Frosch (vor dem Abschneiden).
+    x: the starting noise (n, 3, H, W) on the compute chip. Yields the starting state first and then, after
+    every step, a dictionary with
+        step, t        step number and the time reached (0 = noise, 1 = finished)
+        x              the current state x_t
+        v              the direction the network estimated at the start of this step
+        x1_hat         the network's *guess* of the finished image: whoever walked on from x_t with
+                       velocity v until t = 1 would arrive at x_t + (1 − t)·v
+        x0_hat         the same backwards: the noise the network believes x_t came from
+    The computation is exactly the same as in sample() – it ends at the same frog (before clamping).
     """
     n = x.shape[0]
     ts = torch.linspace(0, 1, steps + 1, device=x.device)
@@ -121,7 +120,7 @@ def sample_steps(model: nn.Module, x: torch.Tensor, steps: int = 30, method: str
         t, t_next = ts[i], ts[i + 1]
         dt = t_next - t
         v = model(x, t.expand(n))
-        x1_hat, x0_hat = x + (1 - t) * v, x - t * v  # Vermutungen, gemessen am Anfang des Schritts
+        x1_hat, x0_hat = x + (1 - t) * v, x - t * v  # guesses, measured at the start of the step
         if method == "euler" or i == steps - 1:
             x = x + dt * v
         else:
@@ -131,7 +130,7 @@ def sample_steps(model: nn.Module, x: torch.Tensor, steps: int = 30, method: str
         yield {"step": i + 1, "t": float(t_next), "x": x, "v": v, "x1_hat": x1_hat, "x0_hat": x0_hat}
 
 
-@torch.no_grad()  # Beim Generieren wird nichts gelernt -> keine Gradienten nötig, spart Speicher und Zeit.
+@torch.no_grad()  # Nothing is learned while generating -> no gradients needed, saves memory and time.
 def sample(
     model: nn.Module,
     n: int,
@@ -142,33 +141,33 @@ def sample(
     generator: torch.Generator | None = None,
     channels: int = 3,
 ) -> torch.Tensor:
-    """Erzeugt n neue Bilder: vom Rauschen (t=0) Schritt für Schritt zum Bild (t=1).
+    """Creates n new images: from noise (t=0) step by step to the image (t=1).
 
-    steps:  Anzahl der Schritte. Wenige Schritte = grob und "messy", viele = sauberer, aber langsamer.
-    method: "euler" (einfach) oder "heun" (genauer, fragt das Netz pro Schritt zweimal).
-    generator: fester Zufallsgenerator -> gleicher Seed, gleiche Frösche.
-    Rückgabe: Tensor (n, 3, res, res) mit Werten in [-1, 1].
+    steps:  number of steps. Few steps = rough and "messy", many = cleaner but slower.
+    method: "euler" (simple) or "heun" (more accurate, asks the network twice per step).
+    generator: fixed random generator -> same seed, same frogs.
+    Returns: tensor (n, 3, res, res) with values in [-1, 1].
     """
-    # Startpunkt: reines Rauschen. Es wird immer auf der CPU gewürfelt und dann verschoben, damit
-    # ein bestimmter Seed auf Mac (MPS), Grafikkarte (CUDA) und CPU dieselben Bilder ergibt.
+    # Starting point: pure noise. It is always drawn on the CPU and then moved, so that a given seed
+    # yields the same images on a Mac (MPS), a GPU (CUDA) and the CPU.
     x = torch.randn(n, channels, res, res, generator=generator, device="cpu").to(device)
-    # Die Zeitpunkte, an denen wir anhalten: 0, 1/steps, 2/steps, ..., 1.
+    # The times at which we stop: 0, 1/steps, 2/steps, ..., 1.
     ts = torch.linspace(0, 1, steps + 1, device=device)
     for i in range(steps):
         t, t_next = ts[i], ts[i + 1]
         dt = t_next - t
-        # Das Netz nach der Richtung fragen. t.expand(n): dieselbe Zeit für alle n Bilder.
+        # Ask the network for the direction. t.expand(n): the same time for all n images.
         v = model(x, t.expand(n))
         if method == "euler" or i == steps - 1:
-            # Euler: einfach ein Stück in diese Richtung gehen. Der allerletzte Schritt ist immer
-            # Euler, weil Heun sonst das Netz bei t = 1 fragen würde, wo es nie trainiert hat.
+            # Euler: simply walk a bit in this direction. The very last step is always Euler, because
+            # Heun would otherwise ask the network at t = 1, where it was never trained.
             x = x + dt * v
         else:
-            # Heun: erst probeweise einen Euler-Schritt machen, am Zielpunkt nochmal nach der
-            # Richtung fragen und dann den Mittelwert beider Richtungen gehen. Wie beim Wandern:
-            # Wer auch am Ende des Wegstücks auf den Kompass schaut, kommt in Kurven genauer an.
+            # Heun: first take a trial Euler step, ask for the direction again at its end point, then walk
+            # along the average of both directions. Like hiking: whoever also checks the compass at the
+            # end of a stretch arrives more accurately on curved paths.
             x_pred = x + dt * v
             v_next = model(x_pred, t_next.expand(n))
             x = x + dt * 0.5 * (v + v_next)
-    # Kleine Ausreißer über den gültigen Bereich hinaus abschneiden.
+    # Clip small outliers beyond the valid range.
     return x.clamp(-1, 1)

@@ -1,7 +1,7 @@
-"""Anhang A – Welche Dateien sind Bilder, und welche sind Website-Müll?
+"""Appendix A – Which files are images, and which are website junk?
 
-Gebraucht von Kapitel 1 (collect.py), Kapitel 2 (prepare.py) und Kapitel 3 (data.py), damit alle
-drei dieselben Regeln anwenden. Wer ein neues Bildformat erlauben will, ändert es nur hier.
+Used by chapter 1 (collect.py), chapter 2 (prepare.py) and chapter 3 (data.py), so all three apply the same
+rules. Whoever wants to allow a new image format only changes it here.
 """
 
 from __future__ import annotations
@@ -10,21 +10,21 @@ import re
 from collections import Counter
 from pathlib import Path
 
-# Akzeptierte Dateiendungen.
-#   .jfif ist ganz normales JPEG – Chrome und Download-Erweiterungen speichern Google-Bilder oft so.
-#   .avif kann Pillow ab Version 11.3 selbst lesen.
-#   .heic/.heif sind iPhone-Fotos und brauchen das Zusatzpaket pillow-heif.
+# Accepted file extensions.
+#   .jfif is plain JPEG – Chrome and download extensions often save Google images like that.
+#   .avif can be read by Pillow itself from version 11.3 on.
+#   .heic/.heif are iPhone photos and need the extra package pillow-heif.
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".jfif", ".webp", ".bmp", ".gif", ".avif", ".heic", ".heif"}
 HEIF_EXTS = {".heic", ".heif"}
 
-# Merkt sich, ob die HEIC-Unterstützung schon eingeschaltet wurde (None = noch nicht versucht).
+# Remembers whether HEIC support has already been switched on (None = not tried yet).
 _heif_ok: bool | None = None
 
 
 def enable_heif() -> bool:
-    """Bringt der Bildbibliothek Pillow iPhone-Fotos (HEIC) bei, falls pillow-heif installiert ist."""
+    """Teaches the image library Pillow to read iPhone photos (HEIC), if pillow-heif is installed."""
     global _heif_ok
-    if _heif_ok is None:  # nur beim ersten Aufruf versuchen
+    if _heif_ok is None:  # only try on the first call
         try:
             from pillow_heif import register_heif_opener
 
@@ -36,10 +36,10 @@ def enable_heif() -> bool:
 
 
 def scan(folder: str | Path) -> tuple[list[Path], Counter]:
-    """Findet alle Bilddateien in einem Ordner (auch in Unterordnern).
+    """Finds all image files in a folder (including subfolders).
 
-    Rückgabe: (sortierte Liste der Bilder, Zähler der übersprungenen Endungen wie {".mp4": 3}).
-    Versteckte Dateien (z.B. .DS_Store vom Mac) werden still ignoriert.
+    Returns: (sorted list of images, counter of skipped extensions such as {".mp4": 3}).
+    Hidden files (e.g. .DS_Store from the Mac) are silently ignored.
     """
     images, skipped = [], Counter()
     for p in sorted(Path(folder).expanduser().rglob("*")):
@@ -49,47 +49,47 @@ def scan(folder: str | Path) -> tuple[list[Path], Counter]:
         if ext in IMG_EXTS:
             images.append(p)
         else:
-            skipped[ext or "(ohne Endung)"] += 1
+            skipped[ext or "(no extension)"] += 1
     return images, skipped
 
 
 def report_skipped(skipped: Counter) -> None:
-    """Gibt aus, welche Nicht-Bild-Dateien übersprungen wurden, damit nichts unbemerkt verloren geht."""
+    """Prints which non-image files were skipped, so nothing gets lost unnoticed."""
     if skipped:
         parts = ", ".join(f"{n}× {ext}" for ext, n in skipped.most_common())
-        print(f"übersprungen (kein Bildformat): {parts}")
+        print(f"skipped (not an image format): {parts}")
 
 
-# Website-Grafiken, die Browser-Erweiterungen ("alle Bilder herunterladen") mit einsammeln.
-# Auf Reddit z.B. communityIcon_*, avatar_default_*, *-headshot.png (Profilbilder) oder 64x64.png (App-Icons).
-# ^\d+x\d+$ erkennt Dateinamen, die nur aus einer Größenangabe wie "192x192" bestehen.
+# Website graphics that browser extensions ("download all images") collect along with the memes.
+# On reddit e.g. communityIcon_*, avatar_default_*, *-headshot.png (profile pictures) or 64x64.png (app icons).
+# ^\d+x\d+$ matches file names that consist only of a size such as "192x192".
 JUNK_NAME = re.compile(r"avatar|communityicon|headshot|snoo|icon|logo|banner|emoji|award|^\d+x\d+$", re.IGNORECASE)
-# Echte Meme-Posts sind fast immer mindestens 300 px groß, Avatare und Icons höchstens 256 px.
+# Real meme posts are almost always at least 300 px, avatars and icons at most 256 px.
 DEFAULT_MIN_SIZE = 200
 
 
 def is_junk(path: str | Path, min_size: int = DEFAULT_MIN_SIZE) -> str | None:
-    """Prüft eine Bilddatei. Rückgabe: Grund fürs Aussortieren ("Name", "kaputt", "zu klein") oder None = ok."""
+    """Checks an image file. Returns the reason to drop it ("name", "broken", "too small") or None = ok."""
     from PIL import Image
 
     path = Path(path)
-    if JUNK_NAME.search(path.stem):  # stem = Dateiname ohne Endung
-        return "Name"
+    if JUNK_NAME.search(path.stem):  # stem = file name without extension
+        return "name"
     if path.suffix.lower() in HEIF_EXTS:
         enable_heif()
     try:
-        # Image.open liest nur den Dateikopf – schnell, auch bei großen Bildern.
+        # Image.open only reads the file header – fast, even for big images.
         with Image.open(path) as im:
             w, h = im.size
-    except Exception:  # noqa: BLE001 – abgebrochene Downloads, HEIC ohne pillow-heif, ...
-        return "kaputt"
-    if min(w, h) < min_size:  # die kürzere Seite zählt
-        return "zu klein"
+    except Exception:  # noqa: BLE001 – aborted downloads, HEIC without pillow-heif, ...
+        return "broken"
+    if min(w, h) < min_size:  # the shorter side counts
+        return "too small"
     return None
 
 
 def report_junk(junk: Counter) -> None:
-    """Gibt aus, wie viele Bilder aus welchem Grund aussortiert wurden."""
+    """Prints how many images were dropped and why."""
     if junk:
         parts = ", ".join(f"{n}× {why}" for why, n in junk.most_common())
-        print(f"aussortiert: {parts}")
+        print(f"dropped: {parts}")

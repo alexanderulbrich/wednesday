@@ -1,27 +1,27 @@
-"""Kapitel 2 – Bilder aufbereiten: quadratisch, klein, als Zip für Kaggle.
+"""Chapter 2 – Preparing images: square, small, zipped for Kaggle.
 
-Nach Kapitel 1 liegen in data/raw/ Bilder in allen Größen, Formaten und Seitenverhältnissen. Das Netz
-braucht aber alle Bilder gleich groß und quadratisch. Dieses Skript
+After chapter 1, data/raw/ contains images of all sizes, formats and aspect ratios. The network, however,
+needs all images square and of the same size. This script
 
-1. findet alle Bilder und wirft Website-Grafiken raus,
-2. entfernt Duplikate (dasselbe Bild in anderer Größe/Qualität),
-3. optional: wirft Bilder ohne Frosch raus (CLIP, Anhang B),
-4. schneidet aus jedem Bild das größte Quadrat aus der Mitte aus,
-5. speichert es in 64×64 und 128×128 Pixeln als PNG,
-6. packt alles in eine Zip-Datei, die man als Kaggle-Dataset hochladen kann.
+1. finds all images and throws out website graphics,
+2. removes duplicates (the same image in another size/quality),
+3. optionally: throws out images without a frog (CLIP, appendix B),
+4. cuts the largest square out of the middle of every image,
+5. saves it as PNG at 64×64 and 128×128 pixels,
+6. packs everything into a zip file that can be uploaded as a Kaggle dataset.
 
-Die Originale in data/raw/ bleiben unverändert. data/processed/ wird bei jedem Lauf komplett neu
-erzeugt – wer Bilder entfernen will, löscht sie in data/raw/ und lässt das Skript nochmal laufen.
+The originals in data/raw/ stay untouched. data/processed/ is rebuilt completely on every run – whoever wants
+to remove images deletes them in data/raw/ and runs the script again.
 
-    python scripts/prepare.py                      # Memes -> data/processed/ + data/wednesday-frogs.zip
-    python scripts/prepare.py --clip-filter        # zusätzlich Bilder ohne Frosch weglassen
-    python scripts/prepare.py --fit pad            # auffüllen statt zuschneiden (ganzes Meme bleibt drauf)
+    python scripts/prepare.py                      # memes -> data/processed/ + data/wednesday-frogs.zip
+    python scripts/prepare.py --clip-filter        # additionally leave out images without a frog
+    python scripts/prepare.py --fit pad            # pad instead of crop (the whole meme stays on it)
 
-    # Froschfotos fürs Pretraining (aus `collect.py inat`):
+    # frog photos for the pretraining (from `collect.py inat`):
     python scripts/prepare.py --raw data/pretrain/raw --out data/pretrain/processed --zip-name frog-photos
 
-Mit --clip-filter abgelehnte Bilder landen als Kopie in data/processed/review/ (Frosch-Wert im
-Dateinamen). Memes ohne Frosch, die man trotzdem behalten will, überleben nur Läufe ohne --clip-filter.
+With --clip-filter, rejected images are copied to data/processed/review/ (frog score in the file name).
+Memes without a frog that you want to keep anyway only survive runs without --clip-filter.
 """
 
 from __future__ import annotations
@@ -33,8 +33,8 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-# Das Projektpaket "wednesday" auch dann finden, wenn die Installation in der venv kaputt ist
-# (iCloud versteckt manchmal deren .pth-Dateien, siehe CLAUDE.md).
+# Find the project package "wednesday" even if the installation in the venv is broken
+# (iCloud sometimes hides its .pth files, see CLAUDE.md).
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -42,14 +42,14 @@ from wednesday.formats import DEFAULT_MIN_SIZE, HEIF_EXTS, JUNK_NAME, enable_hei
 
 
 def square(img: Image.Image, mode: str) -> Image.Image:
-    """Macht ein Bild quadratisch.
+    """Makes an image square.
 
-    "crop": das größte Quadrat aus der Mitte ausschneiden (Standard; der Frosch ist meist mittig).
-    "pad":  das ganze Bild behalten und links/rechts bzw. oben/unten mit seiner Durchschnittsfarbe auffüllen.
+    "crop": cut the largest square out of the middle (default; the frog is usually centred).
+    "pad":  keep the whole image and fill left/right or top/bottom with its average colour.
     """
     if mode == "pad":
         side = max(img.size)
-        # Durchschnittsfarbe: das Bild auf 1×1 Pixel verkleinern und dieses Pixel auslesen.
+        # Average colour: shrink the image to 1×1 pixel and read that pixel.
         bg = Image.new("RGB", (side, side), tuple(int(c) for c in img.resize((1, 1)).getpixel((0, 0))))
         bg.paste(img, ((side - img.width) // 2, (side - img.height) // 2))
         return bg
@@ -57,11 +57,11 @@ def square(img: Image.Image, mode: str) -> Image.Image:
 
 
 def dedupe(paths: list[Path], max_dist: int) -> list[Path]:
-    """Entfernt (fast) doppelte Bilder mit einem "Wahrnehmungs-Fingerabdruck" (perceptual hash).
+    """Removes (near-)duplicate images using a "perceptual fingerprint" (perceptual hash).
 
-    Der pHash fasst das grobe Aussehen eines Bildes in 64 Bits zusammen. Gleiche Bilder in anderer
-    Größe oder JPEG-Qualität haben (fast) denselben Hash. Der Abstand zählt, in wie vielen Bits zwei
-    Hashes sich unterscheiden; unter max_dist gilt ein Bild als Duplikat.
+    The pHash summarizes the rough look of an image in 64 bits. The same image in another size or JPEG
+    quality has (almost) the same hash. The distance counts in how many bits two hashes differ; below
+    max_dist an image counts as a duplicate.
     """
     import imagehash
 
@@ -70,10 +70,10 @@ def dedupe(paths: list[Path], max_dist: int) -> list[Path]:
         try:
             with Image.open(p) as im:
                 h = imagehash.phash(im.convert("RGB"))
-        except Exception as e:  # noqa: BLE001 – abgebrochene Downloads kommen vor
+        except Exception as e:  # noqa: BLE001 – aborted downloads happen
             print(f"skip unreadable {p.name}: {e}")
             continue
-        # Behalten, wenn es sich von allen bisher behaltenen deutlich unterscheidet.
+        # Keep it if it clearly differs from all images kept so far.
         if all(h - o > max_dist for o in hashes):
             kept.append(p)
             hashes.append(h)
@@ -82,12 +82,12 @@ def dedupe(paths: list[Path], max_dist: int) -> list[Path]:
 
 
 def clip_filter(paths: list[Path], review_dir: Path, threshold: float) -> list[Path]:
-    """Lässt nur Bilder mit Frosch durch (Anhang B). Abgelehnte kommen als Kopie nach review_dir."""
+    """Lets only images with a frog through (appendix B). Rejected ones are copied to review_dir."""
     from wednesday.clipfilter import FrogFilter
 
     ff = FrogFilter(threshold=threshold)
     kept, rejected = ff.split(paths)
-    shutil.rmtree(review_dir, ignore_errors=True)  # Review-Ordner vom letzten Lauf leeren
+    shutil.rmtree(review_dir, ignore_errors=True)  # empty the review folder from the last run
     if rejected:
         review_dir.mkdir(parents=True)
         for q, score in rejected:
@@ -110,59 +110,59 @@ def main():
     ap.add_argument("--zip-name", default="wednesday-frogs", help="zip (= Kaggle dataset) name, written next to --out")
     a = ap.parse_args()
 
-    # --- 1. Bilder finden, offensichtlichen Müll aussortieren ---
+    # --- 1. Find images, sort out obvious junk ---
     paths, skipped = scan(a.raw)
     print(f"found {len(paths)} raw images")
     report_skipped(skipped)
     junk_named = [p for p in paths if JUNK_NAME.search(p.stem)]
     if junk_named:
-        print(f"{len(junk_named)} Website-Grafiken (avatar, icon, ...) übersprungen")
+        print(f"skipped {len(junk_named)} website graphics (avatar, icon, ...)")
         paths = [p for p in paths if not JUNK_NAME.search(p.stem)]
-    # iPhone-Fotos gehen nur mit dem Zusatzpaket – lieber laut warnen als still verlieren.
+    # iPhone photos only work with the extra package – better warn loudly than lose them silently.
     heif = [p for p in paths if p.suffix.lower() in HEIF_EXTS]
     if heif and not enable_heif():
-        print(f"WARNUNG: {len(heif)} HEIC-Dateien übersprungen – installieren mit: uv pip install -e '.[data]'")
+        print(f"WARNING: skipped {len(heif)} HEIC files – install with: uv pip install -e '.[data]'")
         paths = [p for p in paths if p.suffix.lower() not in HEIF_EXTS]
 
-    # --- 2. Duplikate und 3. (optional) Bilder ohne Frosch entfernen ---
+    # --- 2. Remove duplicates and 3. (optionally) images without a frog ---
     paths = dedupe(paths, a.hash_dist)
     if a.clip_filter:
         from wednesday.clipfilter import DEFAULT_THRESHOLD
 
         paths = clip_filter(paths, a.out / "review", a.clip_threshold or DEFAULT_THRESHOLD)
 
-    # --- 4./5. Quadratisch zuschneiden und in jeder Auflösung speichern ---
+    # --- 4./5. Crop to a square and save at every resolution ---
     resolutions = [int(r) for r in a.res.split(",")]
-    for r in resolutions:  # Zielordner leeren, damit keine Reste alter Läufe übrig bleiben
+    for r in resolutions:  # empty the target folders so no leftovers from old runs remain
         d = a.out / str(r)
         shutil.rmtree(d, ignore_errors=True)
         d.mkdir(parents=True)
     n, too_small = 0, 0
     for i, p in enumerate(paths):
         with Image.open(p) as im:
-            # exif_transpose: Handyfotos speichern "bitte drehen" oft nur als Zusatzinfo -> anwenden.
-            # convert("RGB"): einheitlich 3 Farbkanäle (bei GIFs wird das erste Bild genommen).
+            # exif_transpose: phone photos often store "please rotate" only as extra info -> apply it.
+            # convert("RGB"): uniformly 3 colour channels (for GIFs the first frame is taken).
             im = ImageOps.exif_transpose(im).convert("RGB")
             if min(im.size) < a.min_size:
                 too_small += 1
                 continue
             sq = square(im, a.fit)
         for r in resolutions:
-            # LANCZOS: hochwertiges Verkleinern, ohne Treppenstufen und Flimmern.
-            # Neutrale Dateinamen (00000.png, 00001.png, ...) – woher ein Bild kam, ist hier egal.
+            # LANCZOS: high-quality shrinking without jagged edges and flicker.
+            # Neutral file names (00000.png, 00001.png, ...) – where an image came from does not matter here.
             sq.resize((r, r), Image.LANCZOS).save(a.out / str(r) / f"{i:05d}.png")
         n += 1
-    fit = "mittiges Quadrat ausgeschnitten" if a.fit == "crop" else "auf Quadrat aufgefüllt"
+    fit = "centre square cropped" if a.fit == "crop" else "padded to a square"
     print(f"wrote {n} images at {resolutions} px to {a.out} ({fit})")
     if too_small:
-        print(f"{too_small} Bilder kleiner als {a.min_size}px übersprungen (--min-size)")
+        print(f"skipped {too_small} images smaller than {a.min_size}px (--min-size)")
 
-    # --- 6. Zip für Kaggle/Colab: Ordner 64/ und 128/ ---
+    # --- 6. Zip for Kaggle/Colab: folders 64/ and 128/ ---
     if not a.no_zip:
         import zipfile
 
         z = a.out.parent / f"{a.zip_name}.zip"
-        # ZIP_STORED = ohne weitere Komprimierung; PNGs sind schon komprimiert, das spart nur Zeit.
+        # ZIP_STORED = no extra compression; PNGs are already compressed, this only saves time.
         with zipfile.ZipFile(z, "w", zipfile.ZIP_STORED) as zf:
             for r in resolutions:
                 for f in sorted((a.out / str(r)).iterdir()):
