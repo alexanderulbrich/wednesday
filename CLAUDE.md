@@ -5,8 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Projekt
 Ein kleines, selbst gebautes Flow-Matching-Modell (Rectified Flow + UNet), das unkonditioniert Bilder des beigen „It is Wednesday my dudes“-Froschs erzeugt. Es ist ein Spaßprojekt: pixelig und messy ist ausdrücklich ok, Text auf dem Bild ist optional. Der User spricht Deutsch, README und Doku sind auf Deutsch.
 
-## Code-Stil: lesbar wie ein Buch
-Der User will den Code von vorne nach hinten lesen können. Jede Datei ist ein „Kapitel“ mit einem deutschen Docstring, der erklärt, worum es geht. Die Reihenfolge steht in `wednesday/__init__.py`: Kapitel 1–8 = collect → prepare → data → flow → model → ema → train → generate, Anhang A–F = formats, clipfilter, app, monitor, info, trajectory. Die Kommentare sind **deutsch und erklärend** (das *Warum*, Intuition statt Fachjargon, Begriffe beim ersten Auftreten erklärt). Neuer Code bekommt Kommentare im selben Stil. Argparse-Hilfetexte und Programmausgaben sind teils englisch und dürfen so bleiben.
+## Sprache und Code-Stil
+- **Alles im Repo ist Englisch** (Entscheidung des Users vom 2026-11-13): Kommentare, Docstrings, Programmausgaben (print/Log), argparse-Hilfetexte, Plot-Beschriftungen, **vor allem die App-Oberfläche** (Labels, Knöpfe, Radio-Werte, Statuszeilen, Erklärtexte), Notebook-Markdown, README.md und diese CLAUDE.md. Im Chat wird der User weiterhin **auf Deutsch** angesprochen.
+- **Lesbar wie ein Buch:** Der User will den Code von vorne nach hinten lesen können. Jede Datei ist ein „Chapter“ mit einem einleitenden Docstring, der erklärt, worum es geht. Die Reihenfolge steht in `wednesday/__init__.py`: Chapter 1–8 = collect → prepare → data → flow → model → ema → train → generate, Appendix A–F = formats, clipfilter, app, monitor, info, trajectory. Kommentare erklären das *Warum*, Intuition statt Fachjargon, Begriffe beim ersten Auftreten erklärt. Neuer Code bekommt Kommentare im selben Stil (auf Englisch).
+- Stand jetzt ist der Code noch deutsch kommentiert. Die Übersetzung ist Schritt 1 der Roadmap, danach wird auch diese Datei auf Englisch umgestellt.
 
 ## Umgebung
 - Entwicklung und Inference laufen auf dem Mac (Apple Silicon, PyTorch **MPS**). **Training passiert auf Kaggle/Colab** (T4/P100), lokal nur Smoke-Tests (≈2,5 it/s bei `--base 32 --batch 16`).
@@ -67,6 +69,13 @@ Ohne echte Daten: Fake-Bilder erzeugen (beige Ellipse + 2 schwarze Augen auf zuf
 - **Pixelraum, 64 px als Standard** (~18M Parameter mit `base=64, mults=1,2,2,4`), danach optional 128 px. Die Ausgabe wird per Nearest-Neighbor auf 512 px hochskaliert, damit der Pixel-Look bleibt.
 - Daten musste der User erst sammeln, Ziel sind 300 bis 2000 Bilder, nur zur privaten Nutzung. Bei so wenigen Bildern wird teilweise Memorisierung erwartet und akzeptiert.
 - Pretraining auf iNaturalist-Froschfotos (+ Memes), dann Fine-Tune nur auf die Memes (umgesetzt). Später: Themensteuerung über CLIP-Embeddings + CFG. Latent Flow Matching mit SD-VAE für 256 px.
+
+## Roadmap (Stand 2026-11-13)
+Ziel des Users: **erkennbare Frösche mit etwas Unnatürlichem** (z.B. der klassische beige Mittwochsfrosch mit Weihnachtsmütze). Das große Modell (`models/2026-11-13_big-b64_ft-best.pt`, base 64, 22k Schritte Pretrain + Fine-Tune, bester Meme-Stand bei Schritt 1750 von 3302) erzeugt lustige, „trippige“ Bilder, aber selten einen klar erkennbaren Frosch. Den klassischen Mittwochsfrosch hat es teils auswendig gelernt. Reihenfolge, wie mit dem User abgestimmt:
+1. **Alles auf Englisch übersetzen** (Code, Kommentare, Ausgaben, App, Notebooks, README, CLAUDE.md). Nur Text ändern: Prüfung per AST-Vergleich mit ausgeblendeten String-Konstanten/Docstrings + Minimaltests. App-Radio-Werte stecken in der Logik und müssen konsistent mitgeändert werden; CSV-Spaltennamen bleiben gleich.
+2. **Schnelle Gewinne ohne Neutraining:** Temperatur (Startrauschen × τ, 0,6–1,0; τ = 1 muss heutige Bilder exakt reproduzieren) als App-Regler und `generate.py --temperature`; mehr Sampling-Schritte als Standard; „8 candidates“-Vorschau, aus der man einen auswählt und live entstehen lässt.
+3. **Daten-Kuration:** CLIP bewertet Memes nach „classic beige round Wednesday frog“ und „frog with hat/costume/accessory“ (gemeinsam mit dem User sichten). Diese Memes werden im Training öfter gezogen (gewichtetes Sampling statt Wegwerfen). Dazu mehr rundliche iNat-Fotos ohne Filter „nur erwachsene“. Fine-Tune (~30 min) vom bestehenden Pretrain-`last.pt` mit `--keep-best`, Vergleich in der App mit gleichen Seeds.
+4. **Später:** Prompt-Konditionierung (UNet bekommt CLIP-Bild-Embeddings, Training mit Classifier-Free Guidance; beim Sampling CLIP-Text-Embedding, z.B. „a frog wearing a santa hat“, + Guidance-Stärke). Braucht kompletten Neutraining-Lauf (~3–4 h Kaggle). Außerdem 128 px bzw. Latent Flow Matching und App v2 (GIF-Export, Morphen zwischen Seeds, „Kopiert es nur?“-Vergleich).
 
 ## Offen / ungetestet
 Verifiziert ist nur die lokale Pipeline mit Fake-Bildern: prepare → Training → Resume → `generate.py --text`. Die Samples konvergieren nach 1200 Schritten zu sauberen Blobs. **Noch nie gelaufen** sind:
