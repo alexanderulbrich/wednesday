@@ -76,6 +76,15 @@ python generate.py --ckpt frog.pt --steps 3        # extra messy
 python app.py --ckpt frog.pt                       # Web-UI mit Button
 ```
 
+## App
+```bash
+uv pip install -e '.[app]'
+python app.py            # dann http://127.0.0.1:7860 öffnen
+```
+Modell, Seed und Schritte wählen, „▶ Mittwoch!“ drücken und zusehen, wie aus Rauschen ein Frosch wird. Rechts zeigen
+Kurven, wie sich der Flow einpendelt: wie stark sich die Vermutung des Netzes noch ändert, wie gerade der Weg ist,
+und die Flugbahn vom Rauschen zum Bild.
+
 ## Wie es funktioniert
 Der Code ist zum Lesen gedacht: Jede Datei ist ein Kapitel mit ausführlichen deutschen Kommentaren. Das Inhaltsverzeichnis steht in `wednesday/__init__.py`. Wer nur das Prinzip verstehen will, liest Kapitel 4 (`wednesday/flow.py`), 5 (`wednesday/model.py`) und 7 (`train.py`).
 

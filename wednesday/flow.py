@@ -100,6 +100,37 @@ def validation_loss(model: nn.Module, x1: torch.Tensor, n_t: int = 8, seed: int 
     return losses / n_t
 
 
+@torch.no_grad()
+def sample_steps(model: nn.Module, x: torch.Tensor, steps: int = 30, method: str = "heun"):
+    """Wie sample(), aber Schritt für Schritt zum Zuschauen (für die App): ein Generator.
+
+    x: das Startrauschen (n, 3, H, W) auf dem Rechenchip. Liefert zuerst den Startzustand und dann nach
+    jedem Schritt ein Dictionary mit
+        step, t        Schrittnummer und erreichte Zeit (0 = Rauschen, 1 = fertig)
+        x              der aktuelle Zustand x_t
+        v              die Richtung, die das Netz zu Beginn dieses Schritts geschätzt hat
+        x1_hat         die *Vermutung* des Netzes, wie das fertige Bild aussieht: Wer von x_t aus mit der
+                       Geschwindigkeit v bis t = 1 weiterginge, käme bei x_t + (1 − t)·v an
+        x0_hat         analog rückwärts: das Rauschen, aus dem das Netz glaubt, dass x_t entstanden ist
+    Die Rechnung ist exakt dieselbe wie in sample() – am Ende steht derselbe Frosch (vor dem Abschneiden).
+    """
+    n = x.shape[0]
+    ts = torch.linspace(0, 1, steps + 1, device=x.device)
+    yield {"step": 0, "t": 0.0, "x": x, "v": None, "x1_hat": None, "x0_hat": x}
+    for i in range(steps):
+        t, t_next = ts[i], ts[i + 1]
+        dt = t_next - t
+        v = model(x, t.expand(n))
+        x1_hat, x0_hat = x + (1 - t) * v, x - t * v  # Vermutungen, gemessen am Anfang des Schritts
+        if method == "euler" or i == steps - 1:
+            x = x + dt * v
+        else:
+            x_pred = x + dt * v
+            v_next = model(x_pred, t_next.expand(n))
+            x = x + dt * 0.5 * (v + v_next)
+        yield {"step": i + 1, "t": float(t_next), "x": x, "v": v, "x1_hat": x1_hat, "x0_hat": x0_hat}
+
+
 @torch.no_grad()  # Beim Generieren wird nichts gelernt -> keine Gradienten nötig, spart Speicher und Zeit.
 def sample(
     model: nn.Module,

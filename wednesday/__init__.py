@@ -16,9 +16,10 @@ Erklärung, worum es in ihr geht; die Kommentare im Code erzählen die Details.
 
     Anhang A   wednesday/formats.py    Welche Dateien sind Bilder, welche sind Website-Müll?
     Anhang B   wednesday/clipfilter.py Ein fertiges Bildmodell (CLIP) prüft: Ist da ein Frosch drauf?
-    Anhang C   app.py                  Eine kleine Web-Oberfläche mit einem Knopf
+    Anhang C   app.py                  Die App: live zusehen, wie aus Rauschen ein Frosch wird
     Anhang D   wednesday/monitor.py    Das Training überwachen: Loss-Tabelle und Loss-Kurven (Overfitting erkennen)
     Anhang E   wednesday/info.py       Modelle verwalten: Steckbrief jeder .pt-Datei, Ordner models/
+    Anhang F   wednesday/trajectory.py Dem Flow zusehen: Kennzahlen und Flugbahn für die App
 
 Wer nur verstehen will, wie generative Modelle funktionieren, liest Kapitel 4, 5 und 7.
 
