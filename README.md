@@ -100,3 +100,13 @@ The code is meant to be read: every file is a chapter with detailed comments. Th
   `v = x1 - x0` (MSE loss). `t` is drawn logit-normal, as in SD3.
 - **Sampling:** the ODE `dx/dt = v(x, t)` is integrated with Heun or Euler from pure noise (t=0) to the image (t=1).
 - Code: `wednesday/flow.py` (loss + sampler), `wednesday/model.py` (UNet), `train.py`, `generate.py`, `app.py`.
+
+### The network
+One call of the UNet, unfolded from a U into a ladder: the tensor enters at the top left as `x_t`, goes down the
+encoder (the map shrinks, the channels grow), through the middle at 8×8 and back up the decoder to `v` at the top
+right. Every dashed line is a skip connection: each encoder row pushes its result onto a stack, and each decoder
+ResBlock pops the top entry and concatenates it to its own channels (hence shapes like `256+128`). The time `t` is
+turned into one vector `emb` that every ResBlock reads. Attention only runs on the small maps: at 16×16 the 256
+positions become 256 tokens with 128 channels each, in the middle 64 tokens with 256 channels.
+
+![UNet architecture with tensor shapes](docs/unet.svg)

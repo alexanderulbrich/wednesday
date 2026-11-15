@@ -1,0 +1,321 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1120" width="1000" height="1120" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<style>
+.bg{fill:#f6f7f2}.band{fill:#e8eae1}.box{fill:#fff;stroke:#a9b0a4;stroke-width:1.2}
+.k-down .box{stroke:#b9740e;stroke-width:1.6}.k-up .box{stroke:#4c7a26;stroke-width:1.6}
+.k-attn .box{stroke:#b0386f;stroke-width:1.6}.k-time .box{stroke:#5a52c4;stroke-width:1.4}
+.k-io .box{fill:#1b201c;stroke:#1b201c}.k-io text{fill:#f6f7f2}
+text{fill:#1b201c}.name{font-size:12.5px;font-weight:600}.badge{font-size:12px;font-weight:600;fill:#b0386f}
+.shape{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:10.5px;fill:#5d655e}
+.k-io .shape{fill:#d9ddd5}.k-time .name{fill:#5a52c4}
+.bandt{font-size:13px;font-weight:700;fill:#5d655e;letter-spacing:.06em}
+.skipt{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:10px;fill:#5d655e}
+.note{font-size:11.5px;fill:#5d655e}
+.glyph{fill:#2f7a6a}.k-down .glyph{fill:#b9740e}.k-up .glyph{fill:#4c7a26}.tdot{fill:#5a52c4}
+.edge{fill:none;stroke:#8d958a;stroke-width:1.6}.skip{fill:none;stroke:#2f7a6a;stroke-width:1.3;stroke-dasharray:5 4}
+</style>
+<defs><marker id="an" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8d958a"/></marker><marker id="as" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2f7a6a"/></marker></defs>
+<rect class="bg" x="0" y="0" width="1000" height="1120"/>
+<rect class="band" x="8" y="178" width="984" height="162" rx="12"/>
+<text class="bandt" x="500" y="166" text-anchor="middle">RESOLUTION 64 × 64</text>
+<rect class="band" x="8" y="384" width="984" height="162" rx="12"/>
+<text class="bandt" x="500" y="372" text-anchor="middle">RESOLUTION 32 × 32</text>
+<rect class="band" x="8" y="590" width="984" height="162" rx="12"/>
+<text class="bandt" x="500" y="578" text-anchor="middle">RESOLUTION 16 × 16</text>
+<rect class="band" x="8" y="796" width="984" height="162" rx="12"/>
+<text class="bandt" x="500" y="784" text-anchor="middle">RESOLUTION 8 × 8</text>
+<rect class="band" x="8" y="984" width="984" height="68" rx="12"/>
+<text class="bandt" x="500" y="974" text-anchor="middle">MIDDLE · 8 × 8</text>
+<text class="note" x="196" y="104">B = batch size</text><text class="note" x="196" y="120">(64 in training)</text>
+<path class="skip" d="M344,927.0 L654,927.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="922.0" text-anchor="middle">(B, 256, 8, 8)</text>
+<path class="skip" d="M344,877.0 L654,877.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="872.0" text-anchor="middle">(B, 256, 8, 8)</text>
+<path class="skip" d="M344,827.0 L654,827.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="822.0" text-anchor="middle">(B, 128, 8, 8)</text>
+<path class="skip" d="M344,721.0 L654,721.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="716.0" text-anchor="middle">(B, 128, 16, 16)</text>
+<path class="skip" d="M344,671.0 L654,671.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="666.0" text-anchor="middle">(B, 128, 16, 16)</text>
+<path class="skip" d="M344,621.0 L654,621.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="616.0" text-anchor="middle">(B, 128, 16, 16)</text>
+<path class="skip" d="M344,515.0 L654,515.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="510.0" text-anchor="middle">(B, 128, 32, 32)</text>
+<path class="skip" d="M344,465.0 L654,465.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="460.0" text-anchor="middle">(B, 128, 32, 32)</text>
+<path class="skip" d="M344,415.0 L654,415.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="410.0" text-anchor="middle">(B, 64, 32, 32)</text>
+<path class="skip" d="M344,309.0 L654,309.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="304.0" text-anchor="middle">(B, 64, 64, 64)</text>
+<path class="skip" d="M344,259.0 L654,259.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="254.0" text-anchor="middle">(B, 64, 64, 64)</text>
+<path class="skip" d="M344,209.0 L654,209.0" marker-end="url(#as)"/>
+<text class="skipt" x="500" y="204.0" text-anchor="middle">(B, 64, 64, 64)</text>
+<path class="edge" d="M184.0,52 L184.0,189" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,228 L184.0,239" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,278 L184.0,289" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,328 L184.0,395" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,434 L184.0,445" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,484 L184.0,495" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,534 L184.0,601" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,640 L184.0,651" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,690 L184.0,701" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,740 L184.0,807" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,846 L184.0,857" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,896 L184.0,907" marker-end="url(#an)"/>
+<path class="edge" d="M184.0,946 L184.0,995" marker-end="url(#an)"/>
+<path class="edge" d="M324,1018.0 L349,1018.0" marker-end="url(#an)"/>
+<path class="edge" d="M650,1018.0 L675,1018.0" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,996 L816.0,947" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,908 L816.0,897" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,858 L816.0,847" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,808 L816.0,789" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,760 L816.0,741" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,702 L816.0,691" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,652 L816.0,641" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,602 L816.0,583" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,554 L816.0,535" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,496 L816.0,485" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,446 L816.0,435" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,396 L816.0,377" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,348 L816.0,329" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,290 L816.0,279" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,240 L816.0,229" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,190 L816.0,131" marker-end="url(#an)"/>
+<path class="edge" d="M816.0,92 L816.0,53" marker-end="url(#an)"/>
+<g class="k-time">
+<rect class="box" x="390" y="10" width="220" height="28" rx="6"/>
+<text class="name" x="402" y="28">t</text>
+<text class="shape" x="598" y="28" text-anchor="end">(B,)</text>
+<path class="edge" d="M500,38 L500,49" marker-end="url(#an)"/>
+<rect class="box" x="390" y="50" width="220" height="28" rx="6"/>
+<text class="name" x="402" y="68">timestep_embedding</text>
+<text class="shape" x="598" y="68" text-anchor="end">(B, 64)</text>
+<path class="edge" d="M500,78 L500,89" marker-end="url(#an)"/>
+<rect class="box" x="390" y="90" width="220" height="28" rx="6"/>
+<text class="name" x="402" y="108">time_mlp → emb</text>
+<text class="shape" x="598" y="108" text-anchor="end">(B, 256)</text>
+<circle class="tdot" cx="432" cy="146" r="4"/><text class="note" x="442" y="150">emb goes into every ResBlock</text></g>
+<g class="k-io">
+<rect class="box" x="84" y="18" width="200" height="34" rx="17"/>
+<text class="name" x="100" y="40">input x_t</text>
+<text class="shape" x="268" y="40" text-anchor="end">(B, 3, 64, 64)</text></g>
+<g class="k-stem">
+<rect class="box" x="24" y="190" width="320" height="38" rx="6"/>
+<rect class="glyph" x="43.25" y="194.0" width="7.5" height="30" rx="1.5"/>
+<text class="name" x="72" y="205">stem · Conv 3×3</text>
+<text class="shape" x="72" y="220">(B, 3, 64, 64) → (B, 64, 64, 64)</text>
+</g>
+<g class="k-res">
+<rect class="box" x="24" y="240" width="320" height="38" rx="6"/>
+<rect class="glyph" x="43.25" y="244.0" width="7.5" height="30" rx="1.5"/>
+<text class="name" x="72" y="255">ResBlock</text>
+<text class="shape" x="72" y="270">(B, 64, 64, 64) → (B, 64, 64, 64)</text>
+<circle class="tdot" cx="333" cy="251" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="24" y="290" width="320" height="38" rx="6"/>
+<rect class="glyph" x="43.25" y="294.0" width="7.5" height="30" rx="1.5"/>
+<text class="name" x="72" y="305">ResBlock</text>
+<text class="shape" x="72" y="320">(B, 64, 64, 64) → (B, 64, 64, 64)</text>
+<circle class="tdot" cx="333" cy="301" r="4"/>
+</g>
+<g class="k-down">
+<rect class="box" x="24" y="396" width="320" height="38" rx="6"/>
+<rect class="glyph" x="43.25" y="405.0" width="7.5" height="20" rx="1.5"/>
+<text class="name" x="72" y="411">Downsample · Conv 3×3, stride 2</text>
+<text class="shape" x="72" y="426">(B, 64, 64, 64) → (B, 64, 32, 32)</text>
+</g>
+<g class="k-res">
+<rect class="box" x="24" y="446" width="320" height="38" rx="6"/>
+<rect class="glyph" x="39.5" y="455.0" width="15.0" height="20" rx="1.5"/>
+<text class="name" x="72" y="461">ResBlock</text>
+<text class="shape" x="72" y="476">(B, 64, 32, 32) → (B, 128, 32, 32)</text>
+<circle class="tdot" cx="333" cy="457" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="24" y="496" width="320" height="38" rx="6"/>
+<rect class="glyph" x="39.5" y="505.0" width="15.0" height="20" rx="1.5"/>
+<text class="name" x="72" y="511">ResBlock</text>
+<text class="shape" x="72" y="526">(B, 128, 32, 32) → (B, 128, 32, 32)</text>
+<circle class="tdot" cx="333" cy="507" r="4"/>
+</g>
+<g class="k-down">
+<rect class="box" x="24" y="602" width="320" height="38" rx="6"/>
+<rect class="glyph" x="39.5" y="614.5" width="15.0" height="13" rx="1.5"/>
+<text class="name" x="72" y="617">Downsample · Conv 3×3, stride 2</text>
+<text class="shape" x="72" y="632">(B, 128, 32, 32) → (B, 128, 16, 16)</text>
+</g>
+<g class="k-res">
+<rect class="box" x="24" y="652" width="320" height="38" rx="6"/>
+<rect class="glyph" x="39.5" y="664.5" width="15.0" height="13" rx="1.5"/>
+<text class="name" x="72" y="667">ResBlock<tspan class="badge" dx="6">+ Attention</tspan></text>
+<text class="shape" x="72" y="682">(B, 128, 16, 16) → (B, 128, 16, 16)</text>
+<circle class="tdot" cx="333" cy="663" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="24" y="702" width="320" height="38" rx="6"/>
+<rect class="glyph" x="39.5" y="714.5" width="15.0" height="13" rx="1.5"/>
+<text class="name" x="72" y="717">ResBlock<tspan class="badge" dx="6">+ Attention</tspan></text>
+<text class="shape" x="72" y="732">(B, 128, 16, 16) → (B, 128, 16, 16)</text>
+<circle class="tdot" cx="333" cy="713" r="4"/>
+</g>
+<g class="k-down">
+<rect class="box" x="24" y="808" width="320" height="38" rx="6"/>
+<rect class="glyph" x="39.5" y="823.0" width="15.0" height="8" rx="1.5"/>
+<text class="name" x="72" y="823">Downsample · Conv 3×3, stride 2</text>
+<text class="shape" x="72" y="838">(B, 128, 16, 16) → (B, 128, 8, 8)</text>
+</g>
+<g class="k-res">
+<rect class="box" x="24" y="858" width="320" height="38" rx="6"/>
+<rect class="glyph" x="32.0" y="873.0" width="30.0" height="8" rx="1.5"/>
+<text class="name" x="72" y="873">ResBlock</text>
+<text class="shape" x="72" y="888">(B, 128, 8, 8) → (B, 256, 8, 8)</text>
+<circle class="tdot" cx="333" cy="869" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="24" y="908" width="320" height="38" rx="6"/>
+<rect class="glyph" x="32.0" y="923.0" width="30.0" height="8" rx="1.5"/>
+<text class="name" x="72" y="923">ResBlock</text>
+<text class="shape" x="72" y="938">(B, 256, 8, 8) → (B, 256, 8, 8)</text>
+<circle class="tdot" cx="333" cy="919" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="24" y="996" width="300" height="44" rx="6"/>
+<rect class="glyph" x="32.0" y="1014.0" width="30.0" height="8" rx="1.5"/>
+<text class="name" x="72" y="1014">ResBlock</text>
+<text class="shape" x="72" y="1029">(B, 256, 8, 8) → (B, 256, 8, 8)</text>
+<circle class="tdot" cx="313" cy="1007" r="4"/>
+</g>
+<g class="k-attn">
+<rect class="box" x="350" y="996" width="300" height="44" rx="6"/>
+<rect class="glyph" x="358.0" y="1014.0" width="30.0" height="8" rx="1.5"/>
+<text class="name" x="398" y="1014">Attention</text>
+<text class="shape" x="398" y="1029">(B, 256, 8, 8) → (B, 256, 8, 8)</text>
+</g>
+<g class="k-res">
+<rect class="box" x="676" y="996" width="300" height="44" rx="6"/>
+<rect class="glyph" x="684.0" y="1014.0" width="30.0" height="8" rx="1.5"/>
+<text class="name" x="724" y="1014">ResBlock</text>
+<text class="shape" x="724" y="1029">(B, 256, 8, 8) → (B, 256, 8, 8)</text>
+<circle class="tdot" cx="965" cy="1007" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="908" width="320" height="38" rx="6"/>
+<rect class="glyph" x="664.0" y="923.0" width="30.0" height="8" rx="1.5"/>
+<text class="name" x="704" y="923">cat ⊕ → ResBlock</text>
+<text class="shape" x="704" y="938">(B, 256+256, 8, 8) → (B, 256, 8, 8)</text>
+<circle class="tdot" cx="965" cy="919" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="858" width="320" height="38" rx="6"/>
+<rect class="glyph" x="664.0" y="873.0" width="30.0" height="8" rx="1.5"/>
+<text class="name" x="704" y="873">cat ⊕ → ResBlock</text>
+<text class="shape" x="704" y="888">(B, 256+256, 8, 8) → (B, 256, 8, 8)</text>
+<circle class="tdot" cx="965" cy="869" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="808" width="320" height="38" rx="6"/>
+<rect class="glyph" x="664.0" y="823.0" width="30.0" height="8" rx="1.5"/>
+<text class="name" x="704" y="823">cat ⊕ → ResBlock</text>
+<text class="shape" x="704" y="838">(B, 256+128, 8, 8) → (B, 256, 8, 8)</text>
+<circle class="tdot" cx="965" cy="819" r="4"/>
+</g>
+<g class="k-up">
+<rect class="box" x="656" y="760" width="320" height="28" rx="6"/>
+<rect class="glyph" x="664.0" y="767.5" width="30.0" height="13" rx="1.5"/>
+<text class="name" x="704" y="778">Upsample ×2 · Conv 3×3</text>
+<text class="shape" x="966" y="778" text-anchor="end">(B, 256, 16, 16)</text>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="702" width="320" height="38" rx="6"/>
+<rect class="glyph" x="671.5" y="714.5" width="15.0" height="13" rx="1.5"/>
+<text class="name" x="704" y="717">cat ⊕ → ResBlock<tspan class="badge" dx="6">+ Attention</tspan></text>
+<text class="shape" x="704" y="732">(B, 256+128, 16, 16) → (B, 128, 16, 16)</text>
+<circle class="tdot" cx="965" cy="713" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="652" width="320" height="38" rx="6"/>
+<rect class="glyph" x="671.5" y="664.5" width="15.0" height="13" rx="1.5"/>
+<text class="name" x="704" y="667">cat ⊕ → ResBlock<tspan class="badge" dx="6">+ Attention</tspan></text>
+<text class="shape" x="704" y="682">(B, 128+128, 16, 16) → (B, 128, 16, 16)</text>
+<circle class="tdot" cx="965" cy="663" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="602" width="320" height="38" rx="6"/>
+<rect class="glyph" x="671.5" y="614.5" width="15.0" height="13" rx="1.5"/>
+<text class="name" x="704" y="617">cat ⊕ → ResBlock<tspan class="badge" dx="6">+ Attention</tspan></text>
+<text class="shape" x="704" y="632">(B, 128+128, 16, 16) → (B, 128, 16, 16)</text>
+<circle class="tdot" cx="965" cy="613" r="4"/>
+</g>
+<g class="k-up">
+<rect class="box" x="656" y="554" width="320" height="28" rx="6"/>
+<rect class="glyph" x="671.5" y="558.0" width="15.0" height="20" rx="1.5"/>
+<text class="name" x="704" y="572">Upsample ×2 · Conv 3×3</text>
+<text class="shape" x="966" y="572" text-anchor="end">(B, 128, 32, 32)</text>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="496" width="320" height="38" rx="6"/>
+<rect class="glyph" x="671.5" y="505.0" width="15.0" height="20" rx="1.5"/>
+<text class="name" x="704" y="511">cat ⊕ → ResBlock</text>
+<text class="shape" x="704" y="526">(B, 128+128, 32, 32) → (B, 128, 32, 32)</text>
+<circle class="tdot" cx="965" cy="507" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="446" width="320" height="38" rx="6"/>
+<rect class="glyph" x="671.5" y="455.0" width="15.0" height="20" rx="1.5"/>
+<text class="name" x="704" y="461">cat ⊕ → ResBlock</text>
+<text class="shape" x="704" y="476">(B, 128+128, 32, 32) → (B, 128, 32, 32)</text>
+<circle class="tdot" cx="965" cy="457" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="396" width="320" height="38" rx="6"/>
+<rect class="glyph" x="671.5" y="405.0" width="15.0" height="20" rx="1.5"/>
+<text class="name" x="704" y="411">cat ⊕ → ResBlock</text>
+<text class="shape" x="704" y="426">(B, 128+64, 32, 32) → (B, 128, 32, 32)</text>
+<circle class="tdot" cx="965" cy="407" r="4"/>
+</g>
+<g class="k-up">
+<rect class="box" x="656" y="348" width="320" height="28" rx="6"/>
+<rect class="glyph" x="671.5" y="347.0" width="15.0" height="30" rx="1.5"/>
+<text class="name" x="704" y="366">Upsample ×2 · Conv 3×3</text>
+<text class="shape" x="966" y="366" text-anchor="end">(B, 128, 64, 64)</text>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="290" width="320" height="38" rx="6"/>
+<rect class="glyph" x="675.25" y="294.0" width="7.5" height="30" rx="1.5"/>
+<text class="name" x="704" y="305">cat ⊕ → ResBlock</text>
+<text class="shape" x="704" y="320">(B, 128+64, 64, 64) → (B, 64, 64, 64)</text>
+<circle class="tdot" cx="965" cy="301" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="240" width="320" height="38" rx="6"/>
+<rect class="glyph" x="675.25" y="244.0" width="7.5" height="30" rx="1.5"/>
+<text class="name" x="704" y="255">cat ⊕ → ResBlock</text>
+<text class="shape" x="704" y="270">(B, 64+64, 64, 64) → (B, 64, 64, 64)</text>
+<circle class="tdot" cx="965" cy="251" r="4"/>
+</g>
+<g class="k-res">
+<rect class="box" x="656" y="190" width="320" height="38" rx="6"/>
+<rect class="glyph" x="675.25" y="194.0" width="7.5" height="30" rx="1.5"/>
+<text class="name" x="704" y="205">cat ⊕ → ResBlock</text>
+<text class="shape" x="704" y="220">(B, 64+64, 64, 64) → (B, 64, 64, 64)</text>
+<circle class="tdot" cx="965" cy="201" r="4"/>
+</g>
+<g class="k-head">
+<rect class="box" x="656" y="92" width="320" height="38" rx="6"/>
+<rect class="glyph" x="677.0" y="96.0" width="4" height="30" rx="1.5"/>
+<text class="name" x="704" y="107">out_norm · SiLU · out_conv</text>
+<text class="shape" x="704" y="122">(B, 64, 64, 64) → (B, 3, 64, 64)</text>
+</g>
+<g class="k-io">
+<rect class="box" x="716" y="18" width="200" height="34" rx="17"/>
+<text class="name" x="732" y="40">output v</text>
+<text class="shape" x="900" y="40" text-anchor="end">(B, 3, 64, 64)</text></g>
+<rect class="glyph" x="24" y="1070" width="10" height="12" rx="1.5"/><text class="note" x="40" y="1080">glyph: width = channels, height = resolution</text>
+<rect x="330" y="1070" width="12" height="12" rx="3" fill="#fff" stroke="#b9740e" stroke-width="2"/><text class="note" x="348" y="1080">downsample</text>
+<rect x="440" y="1070" width="12" height="12" rx="3" fill="#fff" stroke="#4c7a26" stroke-width="2"/><text class="note" x="458" y="1080">upsample</text>
+<rect x="536" y="1070" width="12" height="12" rx="3" fill="#fff" stroke="#b0386f" stroke-width="2"/><text class="note" x="554" y="1080">attention</text>
+<circle class="tdot" cx="640" cy="1076" r="4"/><text class="note" x="650" y="1080">receives emb (B, 256)</text>
+<path class="skip" d="M800,1076 L830,1076" marker-end="url(#as)"/><text class="note" x="838" y="1080">skip (torch.cat)</text>
+<text class="note" x="24" y="1104">base 64, mults 1,2,2,4, 64 px · 18,089,667 parameters · 22 ResBlocks · 6 attention layers · 12 skip connections</text>
+</svg>
