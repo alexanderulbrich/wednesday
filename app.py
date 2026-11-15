@@ -6,8 +6,12 @@
 
 Then open the address shown (http://127.0.0.1:7860) in the browser.
 
-On the left you set things up (model, seed, steps ...), in the middle the image appears step by step, on the
-right curves show how the flow "settles" (what the curves mean: wednesday/trajectory.py, appendix F).
+On the left you set things up (model, seed, steps, temperature ...), in the middle the image appears step by
+step, on the right curves show how the flow "settles" (what the curves mean: wednesday/trajectory.py, appendix F).
+
+"🎲 8 candidates" renders a quick preview of 8 random frogs (few, simple Euler steps, so it stays fast even with
+the big network on a laptop). Clicking one replays it live with the full settings: same starting noise, so it is
+the same frog, just computed more carefully – very close to the preview, not pixel-identical.
 
 How the live image works: the function behind the button is a *generator* – instead of returning one result
 at the end, it uses `yield` to hand out an intermediate result after every sampling step. Gradio sends each
@@ -30,11 +34,15 @@ from PIL import Image
 from generate import add_caption
 from wednesday import get_device, load_model
 from wednesday.data import to_pil
-from wednesday.flow import sample_steps
+from wednesday.flow import sample, sample_steps, start_noise
 from wednesday.trajectory import Tracker
 
 MODELS = Path("models")
 GREEN, ORANGE, GRAY = "#7bd88f", "#fc9867", "#8b8b8b"
+# Temperature 0.95 as default: compared side by side on the big model (seeds 100–103), 1.0 is detailed but chaotic,
+# 0.95 keeps the motif but calmer and clearer, 0.9 and below smooth it into soft blobs.
+DEFAULT_TEMPERATURE = 0.95
+PREVIEW_STEPS = 20  # Euler steps for the candidate preview
 
 
 # ----------------------------------------------------------------------------- models
@@ -147,15 +155,15 @@ def render(x: torch.Tensor, size: int = 512) -> Image.Image:
 
 # ----------------------------------------------------------------------------- the button
 
-def run(model_path, seed, steps, method, delay_ms, caption, view):
+def run(model_path, seed, steps, method, temperature, delay_ms, caption, view):
     """Generator: yields (image, curves, status line, stored final images) after every step."""
     if not model_path:
         raise gr.Error("No model selected – put .pt files into models/.")
     model, cfg = get_model(model_path)
     steps, seed = int(steps), int(seed)
-    # Starting noise as in flow.sample(): drawn on the CPU -> same seed = same frog on every device
-    g = torch.Generator().manual_seed(seed)
-    x = torch.randn(1, 3, cfg["res"], cfg["res"], generator=g).to(device)
+    # Starting noise from the seed (drawn on the CPU -> same seed = same frog on every device), scaled by the
+    # temperature. start_noise() is also used for the candidates, so a candidate replays as the same frog.
+    x = start_noise([seed], cfg["res"], float(temperature)).to(device)
     tr = Tracker(x.shape[1:])
     guess = x
     for frame in sample_steps(model, x, steps=steps, method=method):
@@ -174,7 +182,23 @@ def run(model_path, seed, steps, method, delay_ms, caption, view):
     # For switching the view after the run: keep the final state and the last guess.
     stored = {"State x_t": img, "Network's guess": render(guess)}
     yield (stored[view] if view in stored else img), make_figure(tr, steps), \
-        f"Done · seed {seed} · {steps} steps ({method})", stored
+        f"Done · seed {seed} · {steps} steps ({method}) · temperature {float(temperature):.2f}", stored
+
+
+def candidates(model_path, temperature):
+    """8 random frogs as a quick preview. Returns (gallery items, their seeds)."""
+    if not model_path:
+        raise gr.Error("No model selected – put .pt files into models/.")
+    model, cfg = get_model(model_path)
+    seeds = [random.randrange(1_000_000) for _ in range(8)]
+    x0 = start_noise(seeds, cfg["res"], float(temperature))
+    imgs = to_pil(sample(model, len(seeds), cfg["res"], steps=PREVIEW_STEPS, method="euler", device=device, x0=x0))
+    return [(im.resize((192, 192), Image.NEAREST), f"seed {s}") for im, s in zip(imgs, seeds)], seeds
+
+
+def pick(seeds, evt: gr.SelectData):
+    """A candidate was clicked: take over its seed (the live run is started right after)."""
+    return seeds[evt.index]
 
 
 def switch_view(view, stored):
@@ -197,11 +221,16 @@ def build(initial: str | None) -> gr.Blocks:
                 with gr.Row():
                     seed = gr.Number(42, label="Seed", precision=0, scale=3)
                     dice = gr.Button("🎲", scale=1, min_width=50)
-                steps = gr.Slider(4, 100, value=40, step=1, label="Steps (few = messy)")
+                steps = gr.Slider(4, 100, value=60, step=1, label="Steps (few = messy)")
                 method = gr.Radio(["heun", "euler"], value="heun", label="Method")
+                temperature = gr.Slider(0.7, 1.05, value=DEFAULT_TEMPERATURE, step=0.01,
+                                        label="Temperature (lower = calmer, more typical frogs)")
                 delay = gr.Slider(0, 300, value=60, step=10, label="Speed: pause per step (ms)")
                 caption = gr.Checkbox(False, label="Add “IT IS WEDNESDAY MY DUDES”")
                 go_btn = gr.Button("▶ Wednesday!", variant="primary", size="lg")
+                cand_btn = gr.Button("🎲 8 candidates")
+                gallery = gr.Gallery(label="Candidates – click one to watch it live", columns=4, height=260,
+                                     allow_preview=False)
             # --- middle: the image
             with gr.Column(scale=4, min_width=320):
                 image = gr.Image(type="pil", label="Frog", height=512)
@@ -218,9 +247,15 @@ def build(initial: str | None) -> gr.Blocks:
                     "**Trajectory:** the image split into a noise component and an image component. The ideal path "
                     "is a straight line (dashed) – deviations are detours the network takes.")
         stored = gr.State(None)
+        cand_seeds = gr.State([])
+        run_inputs = [model, seed, steps, method, temperature, delay, caption, view]
+        run_outputs = [image, plot, status, stored]
         model.change(model_info, model, info)
         dice.click(lambda: random.randrange(1_000_000), None, seed)
-        go_btn.click(run, [model, seed, steps, method, delay, caption, view], [image, plot, status, stored])
+        go_btn.click(run, run_inputs, run_outputs)
+        cand_btn.click(candidates, [model, temperature], [gallery, cand_seeds])
+        # Clicking a candidate: first take over its seed, then start the live run with it.
+        gallery.select(pick, cand_seeds, seed).then(run, run_inputs, run_outputs)
         view.change(switch_view, [view, stored], image)
     return demo
 

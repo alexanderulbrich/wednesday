@@ -1,7 +1,9 @@
 # Python / environment
 __pycache__/
 *.egg-info/
+.venv
 .venv/
+.venv.nosync/
 .ipynb_checkpoints/
 
 # Data (raw images, prepared images, review folders)

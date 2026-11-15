@@ -99,6 +99,21 @@ def validation_loss(model: nn.Module, x1: torch.Tensor, n_t: int = 8, seed: int 
     return losses / n_t
 
 
+def start_noise(seeds: list[int], res: int, temperature: float = 1.0, channels: int = 3) -> torch.Tensor:
+    """The starting noise for a list of seeds: one image per seed, each from its own random generator.
+
+    Why one generator per seed? If 8 images were drawn from a single generator, image no. 3 of the batch would
+    depend on the other 7. With one generator per seed, "seed 1234" always means the same noise – whether it
+    is generated alone or as one of 8 candidates. That is what lets the app show 8 candidates and then replay
+    one of them live, ending at exactly the same frog. (For a single seed this is the same noise that
+    sample() draws with a generator seeded with it.)
+
+    temperature: multiplies the noise (see sample()). Returns a CPU tensor (len(seeds), channels, res, res).
+    """
+    noise = [torch.randn(channels, res, res, generator=torch.Generator().manual_seed(int(s))) for s in seeds]
+    return torch.stack(noise) * temperature
+
+
 @torch.no_grad()
 def sample_steps(model: nn.Module, x: torch.Tensor, steps: int = 30, method: str = "heun"):
     """Like sample(), but step by step for watching (used by the app): a generator.
@@ -140,17 +155,29 @@ def sample(
     device: str | torch.device = "cpu",
     generator: torch.Generator | None = None,
     channels: int = 3,
+    temperature: float = 1.0,
+    x0: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Creates n new images: from noise (t=0) step by step to the image (t=1).
 
     steps:  number of steps. Few steps = rough and "messy", many = cleaner but slower.
     method: "euler" (simple) or "heun" (more accurate, asks the network twice per step).
     generator: fixed random generator -> same seed, same frogs.
+    temperature: scales the starting noise. 1.0 = normal. Below 1 (e.g. 0.85) the start lies closer to the
+             centre of the noise distribution, where the network's training "traffic" was densest; the flow
+             then tends to end at the most typical images it knows – cleaner, more recognizable frogs, but
+             less variety. Above 1 it gets wilder.
+    x0:     ready-made starting noise (e.g. from start_noise()); then generator and temperature are ignored.
     Returns: tensor (n, 3, res, res) with values in [-1, 1].
     """
     # Starting point: pure noise. It is always drawn on the CPU and then moved, so that a given seed
-    # yields the same images on a Mac (MPS), a GPU (CUDA) and the CPU.
-    x = torch.randn(n, channels, res, res, generator=generator, device="cpu").to(device)
+    # yields the same images on a Mac (MPS), a GPU (CUDA) and the CPU. (× 1.0 changes nothing, so the default
+    # reproduces older images bit for bit.)
+    if x0 is None:
+        x = torch.randn(n, channels, res, res, generator=generator, device="cpu").to(device) * temperature
+    else:
+        x = x0.to(device)
+        n = x.shape[0]  # the number of images follows the given noise
     # The times at which we stop: 0, 1/steps, 2/steps, ..., 1.
     ts = torch.linspace(0, 1, steps + 1, device=device)
     for i in range(steps):

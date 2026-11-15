@@ -4,7 +4,8 @@ A small, home-made generative model (rectified flow / flow matching + UNet) that
 
 ## Setup (Mac)
 ```bash
-uv venv && source .venv/bin/activate
+uv venv .venv.nosync && ln -s .venv.nosync .venv   # ".nosync": keep iCloud away from the venv
+source .venv/bin/activate
 uv pip install -e '.[data]'          # + '.[clip]' for the frog filter, '.[app]' for the web app
 ```
 
@@ -80,6 +81,8 @@ python generate.py --ckpt frog.pt                  # one frog, opens right away
 python generate.py --ckpt frog.pt --n 9 --grid     # grid
 python generate.py --ckpt frog.pt --text           # with "IT IS WEDNESDAY MY DUDES"
 python generate.py --ckpt frog.pt --steps 3        # extra messy
+python generate.py --ckpt frog.pt --temperature 0.95                  # calmer, more typical frogs
+python generate.py --ckpt frog.pt --temperature 1.0,0.95,0.9 --n 4    # comparison grid, one row per temperature
 ```
 
 ## App
@@ -87,7 +90,8 @@ python generate.py --ckpt frog.pt --steps 3        # extra messy
 uv pip install -e '.[app]'
 python app.py            # then open http://127.0.0.1:7860
 ```
-Pick model, seed and steps, press "▶ Wednesday!" and watch noise turn into a frog. On the right, curves show how the
+Pick model, seed, steps and temperature, press "▶ Wednesday!" and watch noise turn into a frog. "🎲 8 candidates" shows a
+quick preview of 8 random frogs; click one to watch it being generated live. On the right, curves show how the
 flow settles: how much the network's guess still changes, how straight the path is, and the trajectory from noise to
 image.
 

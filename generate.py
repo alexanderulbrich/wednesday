@@ -9,6 +9,8 @@ classic caption on top.
     python generate.py --ckpt frog.pt --text          # with "IT IS WEDNESDAY MY DUDES"
     python generate.py --ckpt frog.pt --steps 4       # extra messy (few sampling steps)
     python generate.py --ckpt frog.pt --seed 42       # same seed = same frog
+    python generate.py --ckpt frog.pt --temperature 0.85                  # calmer, more typical frogs
+    python generate.py --ckpt frog.pt --temperature 1.0,0.85,0.7 --n 6    # comparison grid: one row per temperature
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from wednesday import get_device, load_model
 from wednesday.data import make_grid, to_pil
-from wednesday.flow import sample
+from wednesday.flow import sample, start_noise
 
 # The classic meme font is Impact. We try several locations (Mac, Linux) and fall back to a similarly bold
 # font if needed.
@@ -67,6 +69,8 @@ def main():
     p.add_argument("--steps", type=int, default=30, help="ODE steps (fewer = messier)")
     p.add_argument("--method", default="heun", choices=["heun", "euler"])
     p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--temperature", default="1.0",
+                   help="scale of the starting noise (<1 = calmer, more typical frogs); a comma list makes a comparison grid")
     p.add_argument("--size", type=int, default=512, help="output size (nearest-neighbor upscale)")
     p.add_argument("--text", action="store_true", help="add 'IT IS WEDNESDAY MY DUDES'")
     p.add_argument("--grid", action="store_true", help="save all frogs in one grid image")
@@ -84,9 +88,20 @@ def main():
     seed = args.seed if args.seed is not None else random.randrange(2**31)
     g = torch.Generator().manual_seed(seed)
 
-    # 3. Generate (chapter 4) and convert to normal images (chapter 3).
-    imgs = to_pil(sample(model, args.n, cfg["res"], steps=args.steps, method=args.method,
-                         device=device, generator=g))
+    temps = [float(t) for t in args.temperature.split(",")]
+    if len(temps) == 1:
+        # 3. Generate (chapter 4) and convert to normal images (chapter 3).
+        imgs = to_pil(sample(model, args.n, cfg["res"], steps=args.steps, method=args.method,
+                             device=device, generator=g, temperature=temps[0]))
+    else:
+        # Comparison: the same n seeds (seed, seed+1, ...) once per temperature. Same seed = same noise
+        # pattern, only scaled – so each column shows one frog at different temperatures.
+        noise = start_noise([seed + i for i in range(args.n)], cfg["res"])
+        imgs = []
+        for t in temps:
+            imgs += to_pil(sample(model, args.n, cfg["res"], steps=args.steps, method=args.method,
+                                  device=device, x0=noise * t))
+            print(f"row {len(imgs) // args.n}: temperature {t}")
     # 4. Enlarge pixel-style: NEAREST turns every pixel into a block instead of smearing.
     imgs = [im.resize((args.size, args.size), Image.NEAREST) for im in imgs]
     if args.text:
@@ -96,7 +111,9 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    if args.grid and len(imgs) > 1:
+    if len(temps) > 1:  # comparison: always one grid, one row per temperature
+        imgs = [make_grid(imgs, cols=args.n)]
+    elif args.grid and len(imgs) > 1:
         imgs = [make_grid(imgs)]
     paths = []
     for i, im in enumerate(imgs):
