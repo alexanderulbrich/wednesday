@@ -43,8 +43,14 @@ GREEN, GRAY = "#7bd88f", "#8b8b8b"
 DEFAULT_TEMPERATURE = 0.95
 PREVIEW_STEPS = 20  # Euler steps for the candidate preview
 PLOT_UPDATES = 15   # redraw the curve about this many times per run (plus at the end)
-# Let the browser enlarge the small images pixel by pixel instead of blurring them.
-CSS = "#frog img, #candidates img { image-rendering: pixelated; }"
+# Let the browser enlarge the small images pixel by pixel instead of blurring them. Gradio's image component uses
+# object-fit: scale-down (= only ever shrink, never enlarge) and a frame that shrinks to its content, so a 64 px
+# frame would stay tiny – "contain" plus a full-size frame makes it fill the box like the final 512 px image.
+CSS = """
+#frog .image-frame { width: 100% !important; height: 100% !important; }
+#frog img { object-fit: contain !important; image-rendering: pixelated; }
+#candidates img { image-rendering: pixelated; }
+"""
 
 
 # ----------------------------------------------------------------------------- models
