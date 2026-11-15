@@ -90,10 +90,9 @@ python generate.py --ckpt frog.pt --temperature 1.0,0.95,0.9 --n 4    # comparis
 uv pip install -e '.[app]'
 python app.py            # then open http://127.0.0.1:7860
 ```
-Pick model, seed, steps and temperature, press "▶ Wednesday!" and watch noise turn into a frog. "🎲 8 candidates" shows a
-quick preview of 8 random frogs; click one to watch it being generated live. On the right, curves show how the
-flow settles: how much the network's guess still changes, how straight the path is, and the trajectory from noise to
-image.
+Pick model, seed, steps and temperature, press "▶ Wednesday!" and watch every step from noise to frog, live. The curve
+on the right shows how the image settles (how much the network's guess still changes per step). "🎲 8 candidates" shows a
+quick preview of 8 random frogs below; click one to watch it being generated live.
 
 ## How it works
 The code is meant to be read: every file is a chapter with detailed comments. The table of contents is in
