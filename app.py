@@ -6,8 +6,9 @@
 
 Then open the address shown (http://127.0.0.1:7860) in the browser.
 
-Left: the controls. Middle: the frog, live – every single state x_t on the way from noise to image. Right: one
-curve that shows how the image "settles" (explained in wednesday/trajectory.py, appendix F). Below: "🎲 8
+Left: the controls. Middle: the frog, live – every single state x_t on the way from noise to image, without any
+pause between steps. Right: one curve that shows how the image "settles" (explained in wednesday/trajectory.py,
+appendix F). Below: "🎲 8
 candidates" renders a quick preview of 8 random frogs; clicking one replays it live with the full settings
 (same starting noise, so the same frog, just computed more carefully – very close to the preview).
 
@@ -22,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import random
-import time
 from pathlib import Path
 
 import gradio as gr
@@ -30,7 +30,6 @@ import plotly.graph_objects as go
 import torch
 from PIL import Image
 
-from generate import add_caption
 from wednesday import get_device, load_model
 from wednesday.data import to_pil
 from wednesday.flow import sample, sample_steps, start_noise
@@ -83,7 +82,7 @@ def model_info(path: str | None) -> str:
         return "No model found – put .pt files into `models/`."
     model, cfg = get_model(path)
     params = sum(p.numel() for p in model.parameters()) / 1e6
-    return f"base {cfg['base']} · {params:.1f}M parameters · {cfg['res']} px"
+    return f"{params:.1f}M parameters"
 
 
 # ----------------------------------------------------------------------------- the curve
@@ -105,15 +104,15 @@ def make_figure(tr: Tracker) -> go.Figure:
                              hovertemplate="t=%{x:.2f}<br>distance %{y:.3f}<extra></extra>"))
     fig.update_xaxes(range=[0, 1], title_text="time t (0 = noise, 1 = image)")
     fig.update_yaxes(type="log", title_text="RMS per pixel")
-    fig.update_layout(template="plotly_dark", height=430, title="How the image settles",
-                      margin=dict(l=55, r=15, t=50, b=45), legend=dict(orientation="h", y=-0.2),
+    fig.update_layout(template="plotly_dark", height=430,
+                      margin=dict(l=55, r=15, t=20, b=45), legend=dict(orientation="h", y=-0.2),
                       paper_bgcolor="rgba(0,0,0,0)", uirevision="keep")
     return fig
 
 
 # ----------------------------------------------------------------------------- the button
 
-def run(model_path, seed, steps, temperature, delay_ms, caption):
+def run(model_path, seed, steps, temperature):
     """Generator: yields (image, curve, status line) after every step – every state x_t is shown."""
     model, cfg = get_model(model_path)
     steps, seed = int(steps), int(seed)
@@ -127,12 +126,8 @@ def run(model_path, seed, steps, temperature, delay_ms, caption):
         # The curve only every few steps (gr.skip() = leave it as it is); the image every step, at native size.
         curve = make_figure(tr) if frame["step"] % plot_every == 0 else gr.skip()
         yield to_pil(frame["x"][:1])[0], curve, f"Step {frame['step']}/{steps} · t = {frame['t']:.2f}"
-        if delay_ms:
-            time.sleep(delay_ms / 1000)
-    # Final frame: enlarged to 512 px, so the caption (if wanted) is readable and the download looks good.
+    # Final frame: enlarged to 512 px, so the download looks good.
     img = to_pil(frame["x"].clamp(-1, 1)[:1])[0].resize((512, 512), Image.NEAREST)
-    if caption:
-        img = add_caption(img)
     yield img, make_figure(tr), f"Done · seed {seed} · {steps} steps · temperature {float(temperature):.2f}"
 
 
@@ -168,8 +163,6 @@ def build(initial: str | None) -> gr.Blocks:
                 steps = gr.Slider(4, 100, value=60, step=1, label="Steps (few = messy)")
                 temperature = gr.Slider(0.7, 1.05, value=DEFAULT_TEMPERATURE, step=0.01,
                                         label="Temperature (lower = calmer, more typical frogs)")
-                delay = gr.Slider(0, 200, value=20, step=10, label="Slow motion: pause per step (ms)")
-                caption = gr.Checkbox(False, label="Add “IT IS WEDNESDAY MY DUDES”")
                 go_btn = gr.Button("▶ Wednesday!", variant="primary", size="lg")
             # --- middle: the frog
             with gr.Column(scale=4, min_width=320):
@@ -177,9 +170,7 @@ def build(initial: str | None) -> gr.Blocks:
                 status = gr.Markdown("Ready.")
             # --- right: the curve
             with gr.Column(scale=4, min_width=320):
-                plot = gr.Plot(label="How the image settles")
-                gr.Markdown("How much the network's guess of the finished frog still changes from step to step: "
-                            "first it decides *what* frog it will be, then only details change.")
+                plot = gr.Plot(show_label=False)
         # --- below: candidates, full width so you can actually see them
         with gr.Row():
             cand_btn = gr.Button("🎲 8 candidates", scale=0, min_width=180)
@@ -187,7 +178,7 @@ def build(initial: str | None) -> gr.Blocks:
         gallery = gr.Gallery(columns=8, rows=1, height=230, object_fit="contain", allow_preview=False,
                              show_label=False, elem_id="candidates")
         cand_seeds = gr.State([])
-        run_inputs = [model, seed, steps, temperature, delay, caption]
+        run_inputs = [model, seed, steps, temperature]
         run_outputs = [image, plot, status]
         model.change(model_info, model, info)
         dice.click(lambda: random.randrange(1_000_000), None, seed)
